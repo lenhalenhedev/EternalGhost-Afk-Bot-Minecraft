@@ -1,170 +1,139 @@
-# 🎮 Discord Minecraft AFK Bot System
-
-Hệ thống quản lý nhiều bot Minecraft AFK cùng lúc thông qua **Discord Slash Commands**.
-
----
-
-## ✨ Tính năng
-
-| Tính năng | Chi tiết |
-|-----------|----------|
-| **Multi-bot** | Quản lý tối đa 50 bot cùng lúc |
-| **State Machine** | OFFLINE→CONNECTING→AUTHENTICATING→PLAYING→AFK↔COMBAT |
-| **AuthMe Auto-Login** | Tự `/register` và `/login` với delay ngẫu nhiên 3-5s, thử lại 4 lần |
-| **Anti-AFK** | Di chuyển ngẫu nhiên bán kính 5-10 block, tránh lava/void/gap, stuck detection |
-| **Combat** | Tấn công zombie/skeleton/spider, bỏ qua creeper/enderman/warden, retreat khi HP < 30% |
-| **Auto-Eat** | Ăn khi food < 14, ưu tiên cooked food, không ăn trong combat |
-| **Inventory** | Tự drop junk (dirt, cobblestone...) khi đầy ≥ 90%, bảo vệ diamond/netherite |
-| **Auto-Reconnect** | Exponential backoff 5s→30s→60s→90s→120s, tối đa 5 lần/10 phút |
-| **Persistence** | Lưu JSON, tự restart `wasRunning=true` khi khởi động lại Node.js |
-| **AES-256-GCM** | Mã hóa mật khẩu với IV ngẫu nhiên + hỗ trợ Key Rotation |
+# Discord Minecraft AFK Bot System
+A system to manage multiple Minecraft AFK bots simultaneously via Discord Slash Commands.
+## Features
+| Feature | Details |
+|---|---|
+| **Multi-bot** | Manage up to 50 bots simultaneously |
+| **State Machine** | OFFLINE -> CONNECTING -> AUTHENTICATING -> PLAYING -> AFK <-> COMBAT |
+| **AuthMe Auto-Login** | Auto /register and /login with random 3-5s delay, retries 4 times |
+| **Anti-AFK** | Random movement within 5-10 block radius, avoids lava/void/gap, stuck detection |
+| **Combat** | Attacks zombie/skeleton/spider, ignores creeper/enderman/warden, retreats when HP < 30% |
+| **Auto-Eat** | Eats when food < 14, prioritizes cooked food, disables during combat |
+| **Inventory** | Auto drops junk (dirt, cobblestone...) when full >= 90%, protects diamond/netherite |
+| **Auto-Reconnect** | Exponential backoff 5s -> 30s -> 60s -> 90s -> 120s, max 5 times/10 mins |
+| **Persistence** | Saves to JSON, auto restarts wasRunning=true on Node.js reboot |
+| **AES-256-GCM** | Encrypts passwords with random IV + supports Key Rotation |
 | **Discord Alerts** | Death, Disconnect, Login Fail, No Food — cooldown 45s/type |
-| **Audit Log** | Ghi lại create/delete/edit với UserID + Timestamp |
-| **Log Summary** | Tóm tắt gửi về Discord mỗi N phút (cấu hình được) |
-
----
-
-## 📋 Yêu cầu
-
-- **Node.js** >= 18.0.0
-- **Discord Bot Token** (từ [Discord Developer Portal](https://discord.com/developers/applications))
-- Discord Application với Slash Commands enabled
-
----
-
-## 🚀 Cài đặt
-
-### 1. Clone và cài dependencies
-
+| **Audit Log** | Logs create/delete/edit with UserID + Timestamp |
+| **Log Summary** | Sends log summary to Discord every N minutes (configurable) |
+## Requirements
+ * **Node.js** >= 18.0.0
+ * **Discord Bot Token** (from Discord Developer Portal)
+ * Discord Application with Slash Commands enabled
+## Installation
+### 1. Clone and install dependencies
 ```bash
 git clone <repo-url>
 cd discord-minecraft-afk-bots
 npm install
+
 ```
-
-### 2. Tạo file `.env`
-
+### 2. Create .env file
 ```bash
 cp .env.example .env
+
 ```
-
-Chỉnh sửa `.env`:
-
+Edit .env:
 ```env
 DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_id
-DISCORD_GUILD_ID=your_guild_id          # để trống = global deploy
-DISCORD_ALERT_CHANNEL_ID=channel_id     # channel nhận alerts
-DISCORD_AUDIT_CHANNEL_ID=channel_id     # channel audit log
+DISCORD_GUILD_ID=your_guild_id          # leave empty for global deploy
+DISCORD_ALERT_CHANNEL_ID=channel_id     # alert channel
+DISCORD_AUDIT_CHANNEL_ID=channel_id     # audit log channel
 
 ADMIN_USER_IDS=your_discord_user_id
 
-# Tạo encryption key:
+# Generate encryption key:
 # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ENCRYPTION_KEY=your_64_char_hex_key
+
 ```
-
-### 3. Tạo thư mục dữ liệu
-
+### 3. Create data directories
 ```bash
 mkdir -p data logs
+
 ```
-
-### 4. Deploy Slash Commands (chỉ cần chạy 1 lần)
-
+### 4. Deploy Slash Commands (Run once)
 ```bash
 node deploy-commands.js
+
 ```
-
-### 5. Khởi động
-
+### 5. Start
 ```bash
 node index.js
-# hoặc
+# or
 npm start
+
 ```
-
----
-
-## 🎮 Hướng dẫn sử dụng
-
-### Tạo bot đầu tiên
-
+## Usage Guide
+### Create your first bot
 ```
 /create-bot host:mc.example.com port:25565 username:MyBot version:1.20.4 password:secret123
+
 ```
-
-### Chọn bot để điều khiển
-
+### Select a bot to control
 ```
 /select-bot id:abc12345
+
 ```
-
-### Khởi động
-
+### Start bot
 ```
 /start
+
 ```
-
-### Xem trạng thái
-
+### Check status
 ```
 /status-bot
+
 ```
-
-### Gửi chat vào game
-
+### Send chat in-game
 ```
 /chat message:Hello World!
+
 ```
-
-### Xem log
-
+### View logs
 ```
 /logs-bot lines:50 hours:1 level:ERROR
+
 ```
-
----
-
-## 📂 Cấu trúc thư mục
-
+## Directory Structure
 ```
 discord-minecraft-afk-bots/
-├── index.js                      # Entry point
-├── deploy-commands.js            # Script đăng ký slash commands
+├── index.js                      
+├── deploy-commands.js            
 ├── .env.example
 ├── package.json
 ├── data/
-│   └── bots.json                 # Dữ liệu bot (auto-created)
+│   └── bots.json                 
 ├── logs/
-│   ├── combined-YYYY-MM-DD.log  # All logs
-│   └── error-YYYY-MM-DD.log     # Error only
+│   ├── combined-YYYY-MM-DD.log  
+│   └── error-YYYY-MM-DD.log     
 └── src/
     ├── config/
-    │   └── index.js              # Env validation & config object
+    │   └── index.js              
     ├── services/
-    │   ├── encryption.js         # AES-256-GCM + key rotation
-    │   └── logger.js             # Winston + per-bot buffers + alert cooldowns
+    │   ├── encryption.js         
+    │   └── logger.js             
     ├── utils/
-    │   ├── helpers.js            # sleep, formatUptime, getReconnectDelay...
-    │   └── validators.js         # validateVersion, validateBotConfig, isAdmin
+    │   ├── helpers.js            
+    │   └── validators.js         
     ├── bot/
-    │   ├── states.js             # BOT_STATES enum + state sets + colors
-    │   ├── BotInstance.js        # Core mineflayer state machine
-    │   ├── AntiAFK.js            # Pathfinder random movement
-    │   ├── Combat.js             # Mob detection + attack loop
-    │   ├── Inventory.js          # Auto-drop junk, protect valuable
-    │   └── AutoEat.js            # Hunger management
+    │   ├── states.js             
+    │   ├── BotInstance.js        
+    │   ├── AntiAFK.js            
+    │   ├── Combat.js             
+    │   ├── Inventory.js          
+    │   └── AutoEat.js            
     ├── manager/
-    │   ├── BotManager.js         # Singleton: create/delete/start/stop bots
-    │   ├── Queue.js              # Per-bot async task queue
-    │   └── Persistence.js        # JSON file read/write + key rotation
+    │   ├── BotManager.js         
+    │   ├── Queue.js              
+    │   └── Persistence.js        
     └── discord/
-        ├── client.js             # Discord.js client setup
-        ├── embeds.js             # Shared embed builders
+        ├── client.js             
+        ├── embeds.js             
         ├── events/
-        │   ├── ready.js          # Register commands, set presence
-        │   └── interactionCreate.js  # Route commands + admin guard
+        │   ├── ready.js          
+        │   └── interactionCreate.js  
         └── commands/
             ├── create-bot.js
             ├── delete-bot.js
@@ -179,52 +148,35 @@ discord-minecraft-afk-bots/
             ├── logs-bot.js
             ├── stats.js
             └── help.js
+
 ```
-
----
-
-## 🔐 Bảo mật
-
-### Mã hóa mật khẩu
-
-Mọi mật khẩu Minecraft đều được mã hóa bằng **AES-256-GCM** với:
-- IV ngẫu nhiên 12 bytes mỗi lần encrypt
-- Auth tag 16 bytes (chống tamper)
-- Key fingerprint để phát hiện key rotation
-
-Định dạng payload: `v1:<fp8>:<ivHex>:<tagHex>:<cipherHex>`
-
+## Security
+### Password Encryption
+All Minecraft passwords are encrypted using **AES-256-GCM** featuring:
+ * Random 12-byte IV per encryption
+ * 16-byte Auth tag (anti-tamper)
+ * Key fingerprint for key rotation detection
+Payload format: v1:<fp8>:<ivHex>:<tagHex>:<cipherHex>
 ### Key Rotation
-
-Khi đổi `ENCRYPTION_KEY`, đặt key cũ vào `OLD_ENCRYPTION_KEY`. Khi khởi động, hệ thống tự động re-encrypt tất cả mật khẩu sang key mới.
-
+When changing ENCRYPTION_KEY, place the old key into OLD_ENCRYPTION_KEY. On startup, the system automatically re-encrypts all passwords to the new key.
 ```env
 ENCRYPTION_KEY=new_64_char_hex_key
 OLD_ENCRYPTION_KEY=old_64_char_hex_key
+
 ```
-
-### Kiểm soát quyền truy cập
-
-Chỉ Discord User ID có trong `ADMIN_USER_IDS` mới dùng được lệnh. Mọi request khác bị từ chối ngay lập tức.
-
----
-
-## ⚙️ Cấu hình nâng cao
-
-| Env Var | Mặc định | Mô tả |
-|---------|----------|-------|
-| `MAX_BOTS` | `50` | Giới hạn số bot tối đa |
-| `BOT_QUEUE_SIZE` | `100` | Queue task tối đa/bot |
-| `BOT_QUEUE_TIMEOUT` | `10000` | Timeout/task (ms) |
-| `LOG_SUMMARY_INTERVAL_MIN` | `15` | Gửi tóm tắt log về Discord (phút) |
-| `LOG_LEVEL` | `info` | Winston log level |
-| `LOG_DIR` | `./logs` | Thư mục lưu log |
-| `DATA_FILE` | `./data/bots.json` | File lưu trữ bot config |
-
----
-
-## 🔄 State Machine
-
+### Access Control
+Only Discord User IDs listed in ADMIN_USER_IDS can use the commands. All other requests are instantly rejected.
+## Advanced Configuration
+| Env Var | Default | Description |
+|---|---|---|
+| MAX_BOTS | 50 | Maximum bot limit |
+| BOT_QUEUE_SIZE | 100 | Max task queue per bot |
+| BOT_QUEUE_TIMEOUT | 10000 | Task timeout (ms) |
+| LOG_SUMMARY_INTERVAL_MIN | 15 | Log summary interval to Discord (minutes) |
+| LOG_LEVEL | info | Winston log level |
+| LOG_DIR | ./logs | Directory to store logs |
+| DATA_FILE | ./data/bots.json | Storage file for bot config |
+## State Machine
 ```
 OFFLINE
   │ /start
@@ -249,41 +201,27 @@ AFK ◄──────── COMBAT                                  │
                               │ limit reached
                               ▼
                            ERROR
+
 ```
-
----
-
-## 🐛 Troubleshooting
-
-**Bot không kết nối được?**
-- Kiểm tra `host`, `port`, `version` với `/status-bot`
-- Xem log với `/logs-bot level:ERROR`
-- Đảm bảo server đang chạy và version khớp
-
-**Mật khẩu AuthMe không hoạt động?**
-- Đảm bảo đã nhập password khi tạo bot với `/create-bot password:...`
-- Kiểm tra log xem server gửi prompt gì
-
-**Slash commands không hiện ra?**
-- Chạy `node deploy-commands.js`
-- Với guild commands: hiện ngay. Global: chờ tối đa 1 giờ
-- Đảm bảo bot có quyền `applications.commands` trong guild
-
-**Lỗi "No matching key for fingerprint"?**
-- Đặt key cũ vào `OLD_ENCRYPTION_KEY` để rotation
-- Nếu mất key hoàn toàn: xóa `data/bots.json` và tạo lại bot
-
-**RAM quá cao?**
-- Mỗi bot ~100-200MB heap. Với 50 bot = ~5-10GB RAM
-- Kiểm tra `/stats` để xem estimation
-- Giảm `MAX_BOTS` trong `.env`
-
----
-
-## 📄 License
-
+## Troubleshooting
+**Bot fails to connect?**
+ * Check host, port, version with /status-bot
+ * View logs with /logs-bot level:ERROR
+ * Ensure the server is online and the version matches
+**AuthMe password not working?**
+ * Make sure you provided a password during bot creation with /create-bot password:...
+ * Check logs to see what prompt the server is sending
+**Slash commands not appearing?**
+ * Run node deploy-commands.js
+ * Guild commands appear instantly. Global commands take up to 1 hour
+ * Ensure the bot has applications.commands permission in the guild
+**Error "No matching key for fingerprint"?**
+ * Put the old key into OLD_ENCRYPTION_KEY for rotation
+ * If the key is completely lost: delete data/bots.json and recreate the bots
+**RAM usage too high?**
+ * Each bot takes ~100-200MB heap. 50 bots = ~5-10GB RAM
+ * Check /stats for estimates
+ * Reduce MAX_BOTS in .env
+## License
 MIT
-
----
-
-*Được tạo với ❤️ cho cộng đồng Minecraft Việt Nam*
+Created with ❤️ lenhalenhedev
