@@ -1,34 +1,44 @@
 'use strict';
-const { v4: uuidv4 }  = require('uuid');
-const cron            = require('node-cron');
 
-const BotInstance   = require('../bot/BotInstance');
-const Persistence   = require('./Persistence');
-const { encrypt }   = require('../services/encryption');
-const { logger, botLog, flushSummary, checkAlertCooldown } = require('../services/logger');
-const { validateBotConfig } = require('../utils/validators');
-const { BOT_STATES, STARTABLE_STATES } = require('../bot/states');
+const cron = require('node-cron');
+
+const BotInstance = require('../bot/BotInstance');
+const Persistence = require('./Persistence');
+const DiscordNotifier = require('./DiscordNotifier');
+const { buildNewRecord, buildEditPatch } = require('./botRecordFactory');
+const { attachInstanceEvents } = require('./instanceEvents');
+const { computeStats } = require('./managerStats');
+const { logger, flushSummary } = require('../services/logger');
 const config = require('../config');
+
+const RESTART_PAUSE_MS = 1_500;
+const SUMMARY_INTERVAL_MIN = 15;
+const SUMMARY_INTERVAL_BOUNDS = { min: 10, max: 30 };
 
 class BotManager {
   constructor() {
     /** @type {Map<string, BotInstance>} */
     this._bots = new Map();
-
     /** @type {import('discord.js').Client|null} */
     this._discordClient = null;
 
-    this._alertChannelId = config.discord.alertChannelId;
-    this._auditChannelId = config.discord.auditChannelId;
+    this._notifier = new DiscordNotifier({
+      getClient: () => this._discordClient,
+      alertChannelId: config.discord.alertChannelId,
+      auditChannelId: config.discord.auditChannelId,
+    });
   }
 
-  // ─── Bootstrap ────────────────────────────────────────────────────────────────
-
+  // ─── Bootstrap ───
   setDiscordClient(client) {
     this._discordClient = client;
-    // Schedule periodic log summary
-    const interval = Math.max(10, Math.min(30, config.limits.logSummaryIntervalMin));
-    cron.schedule(`*/${interval} * * * *`, () => this._sendLogSummary());
+    const interval = Math.max(
+      SUMMARY_INTERVAL_BOUNDS.min,
+      Math.min(SUMMARY_INTERVAL_BOUNDS.max, config.limits.logSummaryIntervalMin || SUMMARY_INTERVAL_MIN),
+    );
+    cron.schedule(`*/${interval} * * * *`, () => {
+      this._notifier.sendLogSummary(flushSummary()).catch(() => {});
+    });
     logger.info(`[BotManager] Log summary scheduled every ${interval} minutes.`);
   }
 
@@ -36,7 +46,6 @@ class BotManager {
   async initialize() {
     Persistence.load();
 
-    // Key rotation
     if (config.encryption.oldKey) {
       const rotated = Persistence.rotateKeys();
       if (rotated > 0) logger.info(`[BotManager] Key rotation: re-encrypted ${rotated} password(s).`);
@@ -46,139 +55,87 @@ class BotManager {
     logger.info(`[BotManager] Loaded ${records.length} bot record(s).`);
 
     for (const record of records) {
-      const instance = new BotInstance(record);
-      this._bots.set(record.id, instance);
-      this._attachInstanceEvents(instance);
-
+      const instance = this._register(record);
       if (record.wasRunning) {
         logger.info(`[BotManager] Auto-starting bot ${record.id} (wasRunning=true)`);
-        instance.start().catch(err =>
-          logger.error(`[BotManager] Auto-start failed for ${record.id}: ${err.message}`)
+        instance.start().catch((err) =>
+          logger.error(`[BotManager] Auto-start failed for ${record.id}: ${err.message}`),
         );
       }
     }
   }
 
-  // ─── Bot lifecycle ────────────────────────────────────────────────────────────
-
-  /**
-   * Create and persist a new bot.
-   * @param {object} opts
-   * @param {string} createdBy  – Discord userId
-   * @returns {{ id: string, record: object }}
-   */
+  // ─── Bot lifecycle ───
   async createBot(opts, createdBy) {
-    const { host, port, username, password, version, autoReconnect = true } = opts;
+    const record = buildNewRecord(opts, createdBy);
 
-    // Validate
-    const validation = validateBotConfig({ host, port, username, version });
-    if (!validation.valid) throw new Error(validation.errors.join(', '));
-
-    // Uniqueness check
-    if (Persistence.findBot(host, parseInt(port, 10), username)) {
-      throw new Error(`A bot for ${username}@${host}:${port} already exists.`);
+    if (Persistence.findBot(record.host, record.port, record.username)) {
+      throw new Error(`A bot for ${record.username}@${record.host}:${record.port} already exists.`);
     }
-
-    // Max bot limit
     if (this._bots.size >= config.limits.maxBots) {
       throw new Error(`Maximum bot limit (${config.limits.maxBots}) reached.`);
     }
 
-    const encryptedPassword = password ? encrypt(password, config.encryption.key) : '';
-
-    const record = {
-      id:                uuidv4(),
-      host,
-      port:              parseInt(port, 10),
-      username,
-      encryptedPassword,
-      version,
-      autoReconnect,
-      wasRunning:        false,
-      createdAt:         new Date().toISOString(),
-      updatedAt:         new Date().toISOString(),
-      createdBy,
-    };
-
     Persistence.saveBot(record);
+    this._register(record);
 
-    const instance = new BotInstance(record);
-    this._bots.set(record.id, instance);
-    this._attachInstanceEvents(instance);
-
-    logger.info(`[BotManager] Bot created: ${record.id} (${username}@${host}:${port})`);
-    this._auditLog(`Bot created`, createdBy, { id: record.id, username, host, port, version });
+    logger.info(`[BotManager] Bot created: ${record.id} (${record.username}@${record.host}:${record.port})`);
+    this._auditLog('Bot created', createdBy, {
+      id: record.id, username: record.username, host: record.host, port: record.port, version: record.version,
+    });
 
     return { id: record.id, record };
   }
 
   async deleteBot(id, deletedBy) {
-    const instance = this._bots.get(id);
-    if (!instance) throw new Error(`Bot ${id} not found.`);
-
-    if (STARTABLE_STATES.has(instance.state) === false) {
-      // Bot is alive – stop it first
-      await instance.stop(true);
-    }
-
+    const instance = this._getBotOrThrow(id);
+    // destroy() performs a forced stop internally; calling stop() separately
+    // here previously double-stopped and double-drained the queue.
     await instance.destroy();
     this._bots.delete(id);
     Persistence.deleteBot(id);
 
     logger.info(`[BotManager] Bot deleted: ${id} by ${deletedBy}`);
-    this._auditLog(`Bot deleted`, deletedBy, { id });
+    this._auditLog('Bot deleted', deletedBy, { id });
   }
 
   async startBot(id) {
-    const instance = this._getBotOrThrow(id);
-    await instance.start();
+    await this._getBotOrThrow(id).start();
     Persistence.updateBotState(id, { wasRunning: true });
   }
 
   async stopBot(id, force = false) {
-    const instance = this._getBotOrThrow(id);
-    await instance.stop(force);
+    await this._getBotOrThrow(id).stop(force);
     Persistence.updateBotState(id, { wasRunning: false });
   }
 
   async restartBot(id) {
     const instance = this._getBotOrThrow(id);
     await instance.stop(true);
-    // Small pause
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, RESTART_PAUSE_MS));
     await instance.start();
     Persistence.updateBotState(id, { wasRunning: true });
   }
 
   async editBot(id, patch, editedBy) {
     const instance = this._getBotOrThrow(id);
-    const record   = instance.record;
+    const allowed = buildEditPatch(instance.record, patch);
 
-    const allowed = {};
-    if (patch.host     !== undefined) allowed.host     = patch.host;
-    if (patch.port     !== undefined) allowed.port     = parseInt(patch.port, 10);
-    if (patch.version  !== undefined) allowed.version  = patch.version;
-    if (patch.autoReconnect !== undefined) allowed.autoReconnect = !!patch.autoReconnect;
-    if (patch.password !== undefined && patch.password !== '') {
-      allowed.encryptedPassword = encrypt(patch.password, config.encryption.key);
-    }
-    allowed.updatedAt = new Date().toISOString();
-
-    Object.assign(record, allowed);
-    Persistence.saveBot(record);
+    Object.assign(instance.record, allowed);
+    Persistence.saveBot(instance.record);
 
     logger.info(`[BotManager] Bot edited: ${id} by ${editedBy}`);
-    this._auditLog(`Bot edited`, editedBy, { id, changes: Object.keys(allowed) });
+    this._auditLog('Bot edited', editedBy, { id, changes: Object.keys(allowed) });
   }
 
   async chatBot(id, message) {
-    const instance = this._getBotOrThrow(id);
-    await instance.chat(message);
+    await this._getBotOrThrow(id).chat(message);
   }
 
-  // ─── Queries ─────────────────────────────────────────────────────────────────
-
-  getBot(id) { return this._bots.get(id) || null; }
+  // ─── Queries ───
+  getBot(id) {
+    return this._bots.get(id) || null;
+  }
 
   getAllBots() {
     return [...this._bots.values()];
@@ -195,135 +152,39 @@ class BotManager {
     Persistence.setUserSelection(userId, botId);
   }
 
-  /** Resolve a bot by id, or fall back to user's selection. */
+  /** Resolve a bot by id, or fall back to the user's selection. */
   resolveBotForUser(botIdOrNull, userId) {
     if (botIdOrNull) return this.getBot(botIdOrNull);
     return this.getUserSelection(userId);
   }
 
   getStats() {
-    const mem   = process.memoryUsage();
-    const bots  = this.getAllBots();
-    const alive = bots.filter(b => b.state !== BOT_STATES.OFFLINE && b.state !== BOT_STATES.DISCONNECTED);
-    return {
-      uptime:      process.uptime(),
-      totalBots:   bots.length,
-      aliveBots:   alive.length,
-      memHeapUsed: mem.heapUsed,
-      memRSS:      mem.rss,
-      memExternal: mem.external,
-      // Rough per-bot estimate: heap / alive bots
-      estimatedPerBotMB: alive.length ? Math.round(mem.heapUsed / alive.length / 1024 / 1024) : 0,
-    };
+    return computeStats(this.getAllBots());
   }
 
-  // ─── Instance event wiring ────────────────────────────────────────────────────
-
-  _attachInstanceEvents(instance) {
-    instance.on('stateChange', (oldState, newState) => {
-      Persistence.updateBotState(instance.id, {
-        wasRunning: newState !== BOT_STATES.OFFLINE && newState !== BOT_STATES.DISCONNECTED,
-      });
-    });
-
-    instance.on('alert', (type, message) => {
-      this._sendAlert(instance, type, message).catch(() => {});
-    });
-
-    instance.on('noFood', () => {
-      if (checkAlertCooldown(`${instance.id}:noFood`)) {
-        this._sendAlert(instance, 'noFood', 'Bot has run out of food! Auto-eat disabled.').catch(() => {});
-      }
-    });
-
-    instance.on('inventoryFull', () => {
-      if (checkAlertCooldown(`${instance.id}:inventoryFull`)) {
-        this._sendAlert(instance, 'inventoryFull', 'Bot inventory is full and has no droppable items.').catch(() => {});
-      }
-    });
+  // ─── Internal ───
+  _register(record) {
+    const instance = new BotInstance(record);
+    this._bots.set(record.id, instance);
+    attachInstanceEvents(instance, this._notifier);
+    return instance;
   }
 
   _getBotOrThrow(id) {
-    const b = this._bots.get(id);
-    if (!b) throw new Error(`Bot ${id} not found.`);
-    return b;
-  }
-
-  // ─── Discord alerts ───────────────────────────────────────────────────────────
-
-  async _sendAlert(instance, type, message) {
-    if (!this._discordClient || !this._alertChannelId) return;
-    try {
-      const ch = await this._discordClient.channels.fetch(this._alertChannelId);
-      if (!ch?.isTextBased()) return;
-
-      const emoji = { death: '💀', disconnect: '🔌', loginFailed: '🔐', reconnectFailed: '🔄', noFood: '🍖', inventoryFull: '🎒' };
-      const e     = emoji[type] || '⚠️';
-
-      const { EmbedBuilder } = require('discord.js');
-      const embed = new EmbedBuilder()
-        .setColor(0xe74c3c)
-        .setTitle(`${e} Bot Alert — ${type}`)
-        .setDescription(message)
-        .addFields(
-          { name: 'Bot',    value: `\`${instance.record.username}\`@\`${instance.record.host}:${instance.record.port}\``, inline: true },
-          { name: 'State',  value: instance.state, inline: true },
-          { name: 'Bot ID', value: `\`${instance.id.slice(0, 8)}\``, inline: true }
-        )
-        .setTimestamp();
-
-      await ch.send({ embeds: [embed] });
-    } catch (err) {
-      logger.error(`[BotManager] Failed to send Discord alert: ${err.message}`);
-    }
-  }
-
-  async _sendLogSummary() {
-    if (!this._discordClient || !this._alertChannelId) return;
-    const summary = flushSummary();
-    if (!summary) return;
-    try {
-      const ch = await this._discordClient.channels.fetch(this._alertChannelId);
-      if (!ch?.isTextBased()) return;
-      const { EmbedBuilder } = require('discord.js');
-      const embed = new EmbedBuilder()
-        .setColor(0x3498db)
-        .setTitle('📋 System Log Summary')
-        .setDescription(summary.slice(0, 4000)) // Discord embed limit
-        .setTimestamp();
-      await ch.send({ embeds: [embed] });
-    } catch (err) {
-      logger.error(`[BotManager] Log summary send failed: ${err.message}`);
-    }
+    const bot = this._bots.get(id);
+    if (!bot) throw new Error(`Bot ${id} not found.`);
+    return bot;
   }
 
   _auditLog(action, userId, meta = {}) {
-    const msg = `[AUDIT] ${action} by ${userId} | ${JSON.stringify(meta)}`;
-    logger.info(msg);
-
-    if (this._discordClient && this._auditChannelId) {
-      this._discordClient.channels.fetch(this._auditChannelId).then(ch => {
-        if (!ch?.isTextBased()) return;
-        const { EmbedBuilder } = require('discord.js');
-        const embed = new EmbedBuilder()
-          .setColor(0xf39c12)
-          .setTitle('📝 Audit Log')
-          .addFields(
-            { name: 'Action',  value: action, inline: true },
-            { name: 'User ID', value: userId, inline: true },
-            { name: 'Details', value: `\`\`\`json\n${JSON.stringify(meta, null, 2)}\n\`\`\`` }
-          )
-          .setTimestamp();
-        ch.send({ embeds: [embed] });
-      }).catch(() => {});
-    }
+    logger.info(`[AUDIT] ${action} by ${userId} | ${JSON.stringify(meta)}`);
+    this._notifier.sendAudit(action, userId, meta).catch(() => {});
   }
 
   /** Graceful shutdown. */
   async shutdown() {
     logger.info('[BotManager] Shutting down all bots…');
-    const stops = [...this._bots.values()].map(b => b.stop(true).catch(() => {}));
-    await Promise.all(stops);
+    await Promise.all([...this._bots.values()].map((b) => b.stop(true).catch(() => {})));
     Persistence.flushSync();
     logger.info('[BotManager] Shutdown complete.');
   }

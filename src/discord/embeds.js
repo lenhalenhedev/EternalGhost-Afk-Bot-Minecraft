@@ -1,6 +1,7 @@
 'use strict';
 const { EmbedBuilder } = require('discord.js');
 const { STATE_COLORS, STATE_EMOJI } = require('../bot/states');
+
 const { formatUptime, formatPos, formatMB } = require('../utils/helpers');
 
 /**
@@ -24,7 +25,7 @@ function buildStatusEmbed(instance) {
       { name: '❤️ HP',       value: `${instance.health.toFixed(1)} / 20`,    inline: true },
       { name: '🍗 Food',     value: `${instance.food} / 20`,                 inline: true },
       { name: '📍 Position', value: formatPos(instance.position),            inline: true },
-      { name: '🔁 Reconnects', value: String(instance._reconnectAttempts),   inline: true },
+      { name: '🔁 Reconnects', value: String(instance.reconnectAttempts),    inline: true },
       { name: '🤖 Auto-Reconnect', value: r.autoReconnect ? '✅' : '❌',    inline: true },
       { name: '🆔 Bot ID',   value: `\`${instance.id.slice(0, 8)}\``,        inline: true },
     )
@@ -72,8 +73,6 @@ function errorEmbed(description) {
  * @param {import('../../bot/BotInstance')[]} bots
  */
 function buildStatsEmbed(stats, bots) {
-  const { BOT_STATES, STATE_EMOJI } = require('../bot/states');
-
   const stateCounts = {};
   for (const b of bots) {
     stateCounts[b.state] = (stateCounts[b.state] || 0) + 1;

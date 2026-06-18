@@ -60,7 +60,7 @@ module.exports = {
             `• Tối đa **50 bots** / instance Node.js (~100-200MB RAM/bot)`,
             `• Queue tối đa **100 task**/bot, timeout **10s**/task`,
             `• Auto-reconnect: **5 lần / 10 phút**, backoff 5s→30s→60s→90s→120s`,
-            `• Login AuthMe: tối đa **4 lần**, fail → ERROR + Discord alert`,
+            `• Login AuthMe: tối đa **5 lần**, fail → ERROR + Discord alert`,
             `• Chat cooldown: **2.5s** / user`,
           ].join('\n'),
           inline: false,

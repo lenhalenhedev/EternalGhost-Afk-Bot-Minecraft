@@ -2,7 +2,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildListEntry } = require('../embeds');
-const { STATE_COLORS } = require('../../bot/states');
 
 const PAGE_SIZE = 15;
 

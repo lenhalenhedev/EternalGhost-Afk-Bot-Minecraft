@@ -5,12 +5,12 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test": "node --test"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.5",
-    "minecraft-data": "^3.69.0",
     "mineflayer": "^4.23.0",
     "mineflayer-pathfinder": "^2.4.5",
     "node-cron": "^3.0.3",

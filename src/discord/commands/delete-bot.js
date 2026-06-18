@@ -7,7 +7,7 @@ const {
   ComponentType,
 } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
-const { successEmbed, errorEmbed, buildListEntry } = require('../embeds');
+const { successEmbed, errorEmbed } = require('../embeds');
 
 module.exports = {
   data: new SlashCommandBuilder()
