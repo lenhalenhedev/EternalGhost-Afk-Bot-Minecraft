@@ -1,5 +1,5 @@
 'use strict';
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 
@@ -15,7 +15,7 @@ module.exports = {
     .addBooleanOption(o => o.setName('auto-reconnect').setDescription('Tự động kết nối lại khi mất kết nối (mặc định: true)').setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const host          = interaction.options.getString('host');
     const port          = interaction.options.getInteger('port');

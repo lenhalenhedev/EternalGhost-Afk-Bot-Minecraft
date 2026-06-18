@@ -1,5 +1,5 @@
 'use strict';
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 const { ALIVE_STATES } = require('../../bot/states');
@@ -16,7 +16,7 @@ module.exports = {
     .addBooleanOption(o => o.setName('auto-reconnect').setDescription('Bật/tắt auto-reconnect').setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const partial  = interaction.options.getString('id').trim();
     const instance = BotManager.getAllBots().find(b => b.id.startsWith(partial) || b.id === partial);

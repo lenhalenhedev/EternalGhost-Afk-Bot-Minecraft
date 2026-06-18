@@ -1,5 +1,5 @@
 'use strict';
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 
@@ -24,7 +24,7 @@ const startCmd = {
     .addStringOption(o => o.setName('id').setDescription('Bot ID (để trống = dùng bot đang chọn)').setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const instance = resolveBot(interaction);
       await BotManager.startBot(instance.id);
@@ -46,7 +46,7 @@ const stopCmd = {
     .addBooleanOption(o => o.setName('force').setDescription('Force stop (bỏ qua queue)').setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const instance = resolveBot(interaction);
       const force    = interaction.options.getBoolean('force') ?? false;
@@ -68,7 +68,7 @@ const restartCmd = {
     .addStringOption(o => o.setName('id').setDescription('Bot ID (để trống = dùng bot đang chọn)').setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const instance = resolveBot(interaction);
       await interaction.editReply({ content: `🔄 Đang restart bot \`${instance.record.username}\`...` });

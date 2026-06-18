@@ -1,5 +1,5 @@
 'use strict';
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 
 const COMMANDS = [
   { name: '/create-bot',   desc: 'Tạo bot mới. Cần: `host`, `port`, `username`, `version`. Tùy chọn: `password`, `auto-reconnect`.' },
@@ -35,7 +35,7 @@ module.exports = {
     .setDescription('Hướng dẫn sử dụng Discord Minecraft AFK Bot'),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const cmdFields = COMMANDS.map(c => ({ name: c.name, value: c.desc, inline: false }));
 

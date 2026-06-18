@@ -1,11 +1,11 @@
 'use strict';
-const { REST, Routes, ActivityType } = require('discord.js');
+const { REST, Routes, ActivityType, Events } = require('discord.js');
 const { logger } = require('../../services/logger');
 const BotManager = require('../../manager/BotManager');
 const config     = require('../../config');
 
 module.exports = {
-  name:  'ready',
+  name:  Events.ClientReady, // 'clientReady' in discord.js v14.22+/v15 (was 'ready')
   once:  true,
 
   async execute(client) {

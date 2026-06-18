@@ -1,5 +1,5 @@
 'use strict';
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 
@@ -13,7 +13,7 @@ const selectBot = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const partial = interaction.options.getString('id').trim();
     const match   = BotManager.getAllBots().find(b => b.id.startsWith(partial) || b.id === partial);
 

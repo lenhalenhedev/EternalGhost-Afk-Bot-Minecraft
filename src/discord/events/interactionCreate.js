@@ -1,4 +1,5 @@
 'use strict';
+const { MessageFlags } = require('discord.js');
 const { logger } = require('../../services/logger');
 const { isAdmin } = require('../../utils/validators');
 const config      = require('../../config');
@@ -13,7 +14,7 @@ module.exports = {
     if (!isAdmin(interaction.user.id, config.access.adminIds)) {
       await interaction.reply({
         content: '❌ You do not have permission to use this bot.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -22,7 +23,7 @@ module.exports = {
     if (!command) {
       await interaction.reply({
         content: '❌ Lệnh không hợp lệ 👉 Dùng `/help` để xem danh sách lệnh.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -34,9 +35,9 @@ module.exports = {
       const msg = `❌ Lỗi khi thực thi lệnh: \`${err.message}\``;
       try {
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: msg, ephemeral: true });
+          await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
         } else {
-          await interaction.reply({ content: msg, ephemeral: true });
+          await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
         }
       } catch (_) { /* ignore double-reply race */ }
     }

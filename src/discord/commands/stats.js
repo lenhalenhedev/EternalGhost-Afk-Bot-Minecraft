@@ -1,5 +1,5 @@
 'use strict';
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildStatsEmbed } = require('../embeds');
 
@@ -9,7 +9,7 @@ module.exports = {
     .setDescription('Kiểm tra tình trạng hệ thống (RAM, Uptime, số bot đang chạy)'),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: false });
+    await interaction.deferReply();
 
     const stats = BotManager.getStats();
     const bots  = BotManager.getAllBots();

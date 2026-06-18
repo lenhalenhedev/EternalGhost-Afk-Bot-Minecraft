@@ -1,5 +1,5 @@
 'use strict';
-const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { getBotLogs } = require('../../services/logger');
 const { errorEmbed } = require('../embeds');
@@ -31,7 +31,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // Resolve bot
     const partial  = interaction.options.getString('id')?.trim();

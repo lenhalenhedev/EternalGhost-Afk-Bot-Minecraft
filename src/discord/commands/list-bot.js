@@ -1,5 +1,5 @@
 'use strict';
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildListEntry } = require('../embeds');
 
@@ -14,7 +14,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: false });
+    await interaction.deferReply();
 
     const bots = BotManager.getAllBots();
     if (bots.length === 0) {
