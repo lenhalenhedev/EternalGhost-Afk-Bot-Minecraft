@@ -11,7 +11,7 @@ const client = new Client({
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, 'commands');
 
-for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
+for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js') && !f.startsWith('_'))) {
   const command = require(path.join(commandsPath, file));
   if (!command.data || !command.execute) {
     console.warn(`[Discord] Command file ${file} is missing data or execute.`);

@@ -8,7 +8,7 @@ const DiscordNotifier = require('./DiscordNotifier');
 const { buildNewRecord, buildEditPatch } = require('./botRecordFactory');
 const { attachInstanceEvents } = require('./instanceEvents');
 const { computeStats } = require('./managerStats');
-const { logger, flushSummary } = require('../services/logger');
+const { logger, flushSummary, clearBotState } = require('../services/logger');
 const config = require('../config');
 
 const RESTART_PAUSE_MS = 1_500;
@@ -26,6 +26,7 @@ class BotManager {
       getClient: () => this._discordClient,
       alertChannelId: config.discord.alertChannelId,
       auditChannelId: config.discord.auditChannelId,
+      logChannelId: config.discord.logChannelId,
     });
   }
 
@@ -94,6 +95,7 @@ class BotManager {
     await instance.destroy();
     this._bots.delete(id);
     Persistence.deleteBot(id);
+    clearBotState(id); // release per-bot log buffer + alert cooldowns (avoids leak)
 
     logger.info(`[BotManager] Bot deleted: ${id} by ${deletedBy}`);
     this._auditLog('Bot deleted', deletedBy, { id });

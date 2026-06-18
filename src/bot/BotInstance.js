@@ -10,11 +10,11 @@ const ReconnectPolicy = require('./connection/reconnectPolicy');
 const { bindBotEvents } = require('./connection/botEventBinder');
 const { decryptPassword, createMineflayerBot } = require('./connection/connector');
 const { toSnapshot } = require('./botSnapshot');
+const { transitionToPlaying, transitionToAFK } = require('./phaseController');
 const { logger, botLog } = require('../services/logger');
 const { sleep } = require('../utils/helpers');
 const config = require('../config');
 
-const SETTLE_BEFORE_AFK_MS = 3_000;
 const CHAT_THROTTLE_MS = 200;
 
 /**
@@ -40,6 +40,7 @@ class BotInstance extends EventEmitter {
     this._reconnect = new ReconnectPolicy(this);
 
     this._loginTimer = null;
+    this._settleTimer = null;
     this._startTime = null;
     this._lastHealthTick = 0;
   }
@@ -128,39 +129,9 @@ class BotInstance extends EventEmitter {
     }
   }
 
-  // ─── State transitions ───
-  _transitionToPlaying() {
-    clearTimeout(this._loginTimer);
-    this._reconnect.resetAttempts(); // healthy connection – reset backoff counter
-    this._setState(BOT_STATES.PLAYING);
-    botLog(this.id, 'info', `PLAYING. Settling ${SETTLE_BEFORE_AFK_MS / 1000}s before AFK…`);
-
-    this._sub.startPlaying(this._bot, (event, ...args) => this.emit(event, ...args));
-    setTimeout(() => this._transitionToAFK(), SETTLE_BEFORE_AFK_MS);
-  }
-
-  _transitionToAFK() {
-    if (this._state === BOT_STATES.OFFLINE || this._state === BOT_STATES.DISCONNECTED) return;
-    if (!this._bot) return;
-    this._setState(BOT_STATES.AFK);
-    this._sub.startAFK(this._bot, (event, ...args) => this._onCombatEvent(event, ...args));
-    botLog(this.id, 'info', 'Entered AFK mode.');
-    this.emit('afkStarted');
-  }
-
-  _onCombatEvent(event, ...args) {
-    if (event === 'combatStart') {
-      this._setState(BOT_STATES.COMBAT);
-      this._sub.enterCombat();
-      this.emit('combatStart', ...args);
-    } else if (event === 'combatEnd') {
-      if (this._state === BOT_STATES.COMBAT) this._setState(BOT_STATES.AFK);
-      this._sub.exitCombat();
-      this.emit('combatEnd', ...args);
-    } else {
-      this.emit(event, ...args);
-    }
-  }
+  // ─── State transitions (logic lives in ./phaseController) ───
+  _transitionToPlaying() { transitionToPlaying(this); }
+  _transitionToAFK() { transitionToAFK(this); }
 
   // ─── Internal helpers ───
   _setState(newState) {
@@ -175,6 +146,8 @@ class BotInstance extends EventEmitter {
     this._reconnect.clearTimer();
     clearTimeout(this._loginTimer);
     this._loginTimer = null;
+    clearTimeout(this._settleTimer);
+    this._settleTimer = null;
     this._auth.reset();
   }
 

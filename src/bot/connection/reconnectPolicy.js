@@ -50,7 +50,10 @@ class ReconnectPolicy {
    */
   handleDisconnect(reason) {
     const i = this._i;
-    i._stopSubsystems();
+    // Stop gameplay subsystems but keep the reconnect timer/bot intact so the
+    // backoff scheduled below can actually fire. (Previously called a removed
+    // `_stopSubsystems()` method, which threw and aborted every reconnect.)
+    i._sub.stopAll();
     i._setState(BOT_STATES.DISCONNECTED);
 
     if (checkAlertCooldown(`${i.id}:disconnect`)) {

@@ -57,63 +57,36 @@ const logger = winston.createLogger({
   exitOnError: false,
 });
 
-// ─── Per-bot ring buffers (for /logs-bot command) ─────────────────────────────
-/** @type {Map<string, Array<{ts:number,level:string,msg:string}>>} */
-const botLogBuffers = new Map();
-const BOT_BUFFER_SIZE = 200;
+// ─── In-memory buffers (per-bot ring buffer, Discord summary, alert cooldowns) ─
+// Pure buffering logic lives in ./logBuffer so it can be unit tested without
+// pulling in winston/config. This module owns winston transports + wiring only.
+const { LogBuffers } = require('./logBuffer');
+const buffers = new LogBuffers();
 
-function getBotBuffer(botId) {
-  if (!botLogBuffers.has(botId)) botLogBuffers.set(botId, []);
-  return botLogBuffers.get(botId);
-}
-
-function pushBotLog(botId, level, message) {
-  const buf = getBotBuffer(botId);
-  buf.push({ ts: Date.now(), level, msg: message });
-  if (buf.length > BOT_BUFFER_SIZE) buf.shift();
-}
-
-/**
- * Retrieve recent logs for a bot.
- * @param {string} botId
- * @param {number} maxLines
- * @param {number} maxAgeMs   – 0 means no limit
- */
+/** Retrieve recent logs for a bot (newest last). 0 maxAgeMs = no age limit. */
 function getBotLogs(botId, maxLines = 50, maxAgeMs = 0) {
-  const buf = getBotBuffer(botId);
-  const cutoff = maxAgeMs ? Date.now() - maxAgeMs : 0;
-  const filtered = maxAgeMs ? buf.filter(e => e.ts >= cutoff) : buf;
-  return filtered.slice(-maxLines);
+  return buffers.getBotLogs(botId, maxLines, maxAgeMs);
 }
 
-// ─── Discord summary buffer ────────────────────────────────────────────────────
-const summaryBuffer = [];
-
+/** Queue a warn/error line for the next Discord summary flush. */
 function addToSummary(level, botId, message) {
-  const prefix = botId ? `[Bot:${botId.slice(0, 8)}]` : '[SYS]';
-  summaryBuffer.push({ ts: Date.now(), level, prefix, message });
-  // keep at most last 100 entries between flushes
-  if (summaryBuffer.length > 100) summaryBuffer.shift();
+  buffers.addToSummary(level, botId, message);
 }
 
 /**
- * Flush summary buffer; returns formatted entries and clears the buffer.
+ * Flush the summary buffer to a formatted Markdown string (or null if empty).
  * Called by BotManager on a cron interval.
  */
 function flushSummary() {
-  if (summaryBuffer.length === 0) return null;
-  const entries = summaryBuffer.splice(0, summaryBuffer.length);
-  const lines = entries.map(e => {
-    const t = new Date(e.ts).toISOString().slice(11, 19);
-    return `\`${t}\` **[${e.level.toUpperCase()}]** ${e.prefix} ${e.message}`;
-  });
-  return lines.join('\n');
+  const entries = buffers.drainSummary();
+  if (entries.length === 0) return null;
+  return entries
+    .map((e) => {
+      const t = new Date(e.ts).toISOString().slice(11, 19);
+      return `\`${t}\` **[${e.level.toUpperCase()}]** ${e.prefix} ${e.message}`;
+    })
+    .join('\n');
 }
-
-// ─── Alert cooldown tracker ────────────────────────────────────────────────────
-/** @type {Map<string, number>} key => lastSentTs */
-const alertCooldowns = new Map();
-const ALERT_COOLDOWN_MS = 45_000; // 45 seconds
 
 /**
  * Check and set alert cooldown.
@@ -121,20 +94,29 @@ const ALERT_COOLDOWN_MS = 45_000; // 45 seconds
  * @returns {boolean} true if alert should be sent
  */
 function checkAlertCooldown(key) {
-  const now  = Date.now();
-  const last = alertCooldowns.get(key) || 0;
-  if (now - last < ALERT_COOLDOWN_MS) return false;
-  alertCooldowns.set(key, now);
-  return true;
+  return buffers.checkAlertCooldown(key);
+}
+
+/** Drop all retained in-memory state for a deleted bot (prevents leaks). */
+function clearBotState(botId) {
+  buffers.clearBot(botId);
 }
 
 // ─── Convenience wrapper that also writes to per-bot buffer + summary ─────────
 function botLog(botId, level, message) {
   logger.log({ level, message, botId });
-  pushBotLog(botId, level, message);
+  buffers.pushBotLog(botId, level, message);
   if (level === 'warn' || level === 'error') {
-    addToSummary(level, botId, message);
+    buffers.addToSummary(level, botId, message);
   }
 }
 
-module.exports = { logger, botLog, getBotLogs, flushSummary, addToSummary, checkAlertCooldown };
+module.exports = {
+  logger,
+  botLog,
+  getBotLogs,
+  flushSummary,
+  addToSummary,
+  checkAlertCooldown,
+  clearBotState,
+};

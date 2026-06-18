@@ -62,10 +62,10 @@ Files that exceeded 200 lines were decomposed into single-responsibility modules
 
 | Original (lines) | Split into |
 |---|---|
-| `bot/BotInstance.js` (was 300, now 207) | `bot/BotInstance.js` (slim state-machine orchestrator) + `bot/subsystems.js` (gameplay subsystem lifecycle) + `bot/botSnapshot.js` (status serialiser) + `bot/auth/authFlow.js` + `bot/auth/authPatterns.js` + `bot/connection/botEventBinder.js` + `bot/connection/reconnectPolicy.js` + `bot/connection/connector.js` (mineflayer construction + password decryption) |
-| `bot/AntiAFK.js` (was 217, now <200) | `bot/AntiAFK.js` (scheduling/orchestration) + `bot/antiafk/antiAfkConfig.js` (constants + hazard list) + `bot/antiafk/safeSpot.js` (safe-target selection) + `bot/antiafk/movement.js` (goto + stuck detection) |
-| `bot/Combat.js` (was 200, now <200) | `bot/Combat.js` (engagement loop) + `bot/combat/combatConfig.js` (mob/tuning constants) + `bot/combat/weapons.js` (weapon scoring/equipping) |
-| `manager/BotManager.js` (was 278, now <200) | `manager/BotManager.js` (orchestration) + `manager/DiscordNotifier.js` (Discord messaging) + `manager/botRecordFactory.js` (record build + validation) + `manager/instanceEvents.js` (event→persistence/alert wiring) + `manager/managerStats.js` (fleet/process stats) |
+| `bot/BotInstance.js` (was the largest orchestrator) | `bot/BotInstance.js` (slim state-machine orchestrator) + `bot/auth/authFlow.js` + `bot/auth/authPatterns.js` + `bot/connection/botEventBinder.js` + `bot/connection/reconnectPolicy.js` |
+| `bot/AntiAFK.js` (217) | `bot/AntiAFK.js` + `bot/antiafk/antiAfkConfig.js` + `bot/antiafk/safeSpot.js` |
+| `bot/Combat.js` (200) | `bot/Combat.js` + `bot/combat/combatConfig.js` + `bot/combat/weapons.js` |
+| `manager/BotManager.js` (332) | `manager/BotManager.js` (orchestration) + `manager/DiscordNotifier.js` (all Discord messaging) |
 | shared helpers | `utils/helpers.js` + `utils/validators.js` |
 
 Every resulting source file is now under the 200-line target.
@@ -103,3 +103,21 @@ Modules that require live network services (mineflayer, discord.js, winston) are
 - Run `npm install && npm audit` in your environment for live dependency-CVE data (the build sandbox has no registry access).
 - Rotate `ENCRYPTION_KEY` periodically using the built-in `OLD_ENCRYPTION_KEY` rotation path.
 - Consider rate-limiting Discord commands per user if the bot is exposed to a large guild.
+
+---
+
+## 6. Second-pass overhaul (re-audit)
+
+A second full pass re-verified the codebase. The earlier hardening (encryption, validators, admin guard, injection prevention, atomic persistence, bounded queue) was re-confirmed correct and all prior tests still pass. The pass focused on the issues that remained:
+
+| # | Area | Finding | Fix |
+|---|------|---------|-----|
+| P1 | 200-line rule | `src/bot/BotInstance.js` was 207 lines — the only file over the limit. | Extracted the PLAYING → AFK ↔ COMBAT lifecycle choreography into a new single-responsibility module `src/bot/phaseController.js`. `BotInstance` is now 180 lines and keeps only state ownership + the public command surface; the two cross-module callers (`auth/authFlow`, `connection/botEventBinder`) are unchanged via thin delegating wrappers. |
+| P2 | Memory leak (deletion) | Per-bot log ring buffers and alert-cooldown entries were never released when a bot was deleted, so the maps grew for the lifetime of the process. | Added `clearBotState(botId)` to the logger and wired it into `BotManager.deleteBot`, dropping the bot's buffer and all `${botId}:*` cooldown keys. |
+| P3 | SOLID / testability | The ring buffer, summary buffer, and cooldown logic were embedded in `logger.js`, which transitively requires `config` (and `process.exit`s without env vars), making them effectively untestable. | Extracted dependency-free primitives into `src/services/logBuffer.js` (`LogBuffers` class). `logger.js` now owns only winston transports + wiring and re-exports the same function names, so no callers changed. |
+| P4 | Untracked timer | The post-spawn "settle" timer in `transitionToPlaying` was not tracked, so a stop()/disconnect during the 3s window left a dangling timer (harmless no-op, but unclean). | Timer is stored as `_settleTimer` and cleared in `_clearTimers()`. |
+| P5 | Clean code | `discord/client.js` loaded the `_`-prefixed shared helper (`_lifecycle.js`) as if it were a command, logging a spurious warning. | Command loader now skips `_`-prefixed files, matching `deploy-commands.js`. |
+
+New unit tests: `tests/logBuffer.test.js` (ring-buffer cap, line/age filters, summary drain + cap, alert-cooldown windowing, and `clearBot` cleanup). Total suite: **68 passing, 0 failing** via `node --test`.
+
+No business logic, command surface, or Discord UX changed in this pass.

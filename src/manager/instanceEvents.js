@@ -22,6 +22,11 @@ function attachInstanceEvents(instance, notifier) {
     notifier.sendAlert(instance, type, message).catch(() => {});
   });
 
+  // Forward runtime/bug errors to the dedicated log channel.
+  instance.on('botError', (err) => {
+    notifier.sendErrorLog(instance, 'Bot runtime error', err).catch(() => {});
+  });
+
   instance.on('noFood', () => {
     if (checkAlertCooldown(`${instance.id}:noFood`)) {
       notifier.sendAlert(instance, 'noFood', 'Bot has run out of food! Auto-eat disabled.').catch(() => {});
