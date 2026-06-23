@@ -11,6 +11,41 @@ const config = require('../config');
  * exact same validation + encryption rules (DRY / single source of truth).
  */
 
+// ─── Per-bot subsystem defaults ─────────────────────────────────────────
+// These mirror the constants in src/bot/antiafk/antiAfkConfig.js,
+// src/bot/combat/combatConfig.js and src/bot/AutoEat.js, and also match the
+// column DEFAULTs in db/schema.sql. They become the per-bot starting point so
+// each bot can later be tuned independently (persisted in its config tables).
+const DEFAULT_ANTIAFK = Object.freeze({
+  enabled: true,
+  minRadius: 5,
+  maxRadius: 10,
+  minInterval: 5000,
+  maxInterval: 15000,
+  maxRetries: 3,
+  moveTimeout: 20000,
+  stuckTimeout: 12000,
+  rotationInterval: 3000,
+});
+
+const DEFAULT_AUTOEAT = Object.freeze({
+  enabled: true,
+  eatThreshold: 14,
+  eatCooldown: 1500,
+  checkInterval: 3000,
+});
+
+const DEFAULT_COMBAT = Object.freeze({
+  enabled: true,
+  scanRange: 15,
+  engageRange: 4,
+  maxCombatDuration: 12000,
+  retreatHpPct: 0.3,
+  scanInterval: 1000,
+  attackInterval: 600,
+  invisibleTimeout: 3000,
+});
+
 /**
  * Validate inputs and build a fresh persisted bot record.
  * @throws if the configuration is invalid.
@@ -31,9 +66,14 @@ function buildNewRecord(opts, createdBy) {
     version,
     autoReconnect,
     wasRunning: false,
+    hidden: false,
     createdAt: now,
     updatedAt: now,
     createdBy,
+    // Per-bot subsystem configuration (persisted in dedicated PG tables).
+    antiAfk: { ...DEFAULT_ANTIAFK },
+    autoEat: { ...DEFAULT_AUTOEAT },
+    combat: { ...DEFAULT_COMBAT },
   };
 }
 
@@ -65,4 +105,10 @@ function buildEditPatch(record, patch) {
   return allowed;
 }
 
-module.exports = { buildNewRecord, buildEditPatch };
+module.exports = {
+  buildNewRecord,
+  buildEditPatch,
+  DEFAULT_ANTIAFK,
+  DEFAULT_AUTOEAT,
+  DEFAULT_COMBAT,
+};

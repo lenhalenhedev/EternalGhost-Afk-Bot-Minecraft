@@ -45,7 +45,7 @@ class BotManager {
 
   /** Load persisted bots and restart those that were running. */
   async initialize() {
-    Persistence.load();
+    await Persistence.load();
 
     if (config.encryption.oldKey) {
       const rotated = Persistence.rotateKeys();
@@ -78,6 +78,9 @@ class BotManager {
     }
 
     Persistence.saveBot(record);
+    Persistence.logActivity(record.id, 'created', createdBy, {
+      username: record.username, host: record.host, port: record.port, version: record.version,
+    });
     this._register(record);
 
     logger.info(`[BotManager] Bot created: ${record.id} (${record.username}@${record.host}:${record.port})`);
@@ -94,6 +97,7 @@ class BotManager {
     // here previously double-stopped and double-drained the queue.
     await instance.destroy();
     this._bots.delete(id);
+    Persistence.logActivity(id, 'deleted', deletedBy, {});
     Persistence.deleteBot(id);
     clearBotState(id); // release per-bot log buffer + alert cooldowns (avoids leak)
 
@@ -104,11 +108,13 @@ class BotManager {
   async startBot(id) {
     await this._getBotOrThrow(id).start();
     Persistence.updateBotState(id, { wasRunning: true });
+    Persistence.logActivity(id, 'started', null, {});
   }
 
   async stopBot(id, force = false) {
     await this._getBotOrThrow(id).stop(force);
     Persistence.updateBotState(id, { wasRunning: false });
+    Persistence.logActivity(id, 'stopped', null, { force });
   }
 
   async restartBot(id) {
@@ -125,6 +131,7 @@ class BotManager {
 
     Object.assign(instance.record, allowed);
     Persistence.saveBot(instance.record);
+    Persistence.logActivity(id, 'edited', editedBy, { changes: Object.keys(allowed) });
 
     logger.info(`[BotManager] Bot edited: ${id} by ${editedBy}`);
     this._auditLog('Bot edited', editedBy, { id, changes: Object.keys(allowed) });
@@ -187,7 +194,7 @@ class BotManager {
   async shutdown() {
     logger.info('[BotManager] Shutting down all bots…');
     await Promise.all([...this._bots.values()].map((b) => b.stop(true).catch(() => {})));
-    Persistence.flushSync();
+    await Persistence.flush();
     logger.info('[BotManager] Shutdown complete.');
   }
 }

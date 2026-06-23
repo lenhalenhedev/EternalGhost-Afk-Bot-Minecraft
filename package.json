@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "db:schema": "psql \"$DATABASE_URL\" -f db/schema.sql",
+    "db:migrate": "node scripts/migrateJsonToPg.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
@@ -14,6 +16,7 @@
     "mineflayer": "^4.23.0",
     "mineflayer-pathfinder": "^2.4.5",
     "node-cron": "^3.0.3",
+    "pg": "^8.11.5",
     "uuid": "^9.0.1",
     "winston": "^3.13.0",
     "winston-daily-rotate-file": "^5.0.0"

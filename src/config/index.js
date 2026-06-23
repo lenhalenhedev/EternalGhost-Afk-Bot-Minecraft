@@ -51,9 +51,21 @@ try {
       oldKey: oldKey || null,
     },
     storage: {
+      // Retained only for the one-off JSON→Postgres migration script.
       dataFile: optionalEnv('DATA_FILE', './data/bots.json'),
       logDir:   optionalEnv('LOG_DIR', './logs'),
       logLevel: optionalEnv('LOG_LEVEL', 'info'),
+    },
+    // Primary datastore is now PostgreSQL. The pg Pool itself is built in
+    // src/config/database.js (it reads these same env vars); this block is
+    // surfaced here so the rest of the app can introspect the settings.
+    database: {
+      url:      optionalEnv('DATABASE_URL'),
+      host:     optionalEnv('PGHOST', 'localhost'),
+      port:     parseInt(optionalEnv('PGPORT', '5432'), 10),
+      user:     optionalEnv('PGUSER'),
+      database: optionalEnv('PGDATABASE'),
+      poolMax:  parseInt(optionalEnv('DB_POOL_MAX', '10'), 10),
     },
     limits: {
       maxBots:              parseInt(optionalEnv('MAX_BOTS', '50'), 10),
