@@ -22,7 +22,7 @@ function transitionToPlaying(instance) {
   clearTimeout(instance._loginTimer);
   instance._reconnect.resetAttempts(); // healthy connection – reset backoff counter
   instance._setState(BOT_STATES.PLAYING);
-  botLog(instance.id, 'info', `PLAYING. Settling ${SETTLE_BEFORE_AFK_MS / 1000}s before AFK…`);
+  botLog(instance.id, 'info', `PLAYING. Settling ${SETTLE_BEFORE_AFK_MS / 1000}s before AFK\u2026`);
 
   instance._sub.startPlaying(instance._bot, (event, ...args) => instance.emit(event, ...args));
 
@@ -34,9 +34,18 @@ function transitionToPlaying(instance) {
 
 /** Begin anti-AFK + combat scanning once settled (no-op if torn down). */
 function transitionToAFK(instance) {
+  // Clear the settle timer that may have scheduled this call. Combined with the
+  // idempotent startAFK below, this guarantees no duplicate path (e.g. respawn
+  // handler + a stale settle timer) can spin up two subsystem sets.
+  clearTimeout(instance._settleTimer);
+  instance._settleTimer = null;
+
   if (instance._state === BOT_STATES.OFFLINE || instance._state === BOT_STATES.DISCONNECTED) return;
   if (!instance._bot) return;
+
   instance._setState(BOT_STATES.AFK);
+  // startAFK is idempotent: it stops any previous antiAFK/combat before creating
+  // new ones, so even a redundant call here cannot leak interval timers.
   instance._sub.startAFK(instance._bot, (event, ...args) => handleCombatEvent(instance, event, ...args));
   botLog(instance.id, 'info', 'Entered AFK mode.');
   instance.emit('afkStarted');

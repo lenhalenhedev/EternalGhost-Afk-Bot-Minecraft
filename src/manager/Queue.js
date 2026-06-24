@@ -6,6 +6,11 @@
  *
  * The logger is injected (dependency inversion) so the queue has no hard
  * dependency on the winston service and can be unit tested with a stub.
+ *
+ * Leak safety: every task races a timeout whose timer is ALWAYS cleared in a
+ * `finally` (so a fast task never leaks its timeout), and `drain()` rejects and
+ * releases every pending task. The drive loop also bails as soon as draining
+ * begins so no further timers are armed during teardown.
  */
 class Queue {
   /**
@@ -57,6 +62,7 @@ class Queue {
     this._running = true;
     try {
       while (this._queue.length > 0) {
+        if (this._draining) break; // teardown began – drain() handles the rest
         const { fn, resolve, reject } = this._queue.shift();
         let timer;
         try {

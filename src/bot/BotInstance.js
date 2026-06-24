@@ -43,6 +43,9 @@ class BotInstance extends EventEmitter {
     this._settleTimer = null;
     this._startTime = null;
     this._lastHealthTick = 0;
+    // Tracks the one-shot post-death 'spawn' listener so it can be removed on
+    // teardown / replaced on the next death (prevents handler stacking).
+    this._respawnHandler = null;
   }
 
   // ─── Public read API ───
@@ -96,6 +99,9 @@ class BotInstance extends EventEmitter {
       }
       this._bot = null;
     }
+    // Stale damage detection across connections would otherwise mis-fire combat.
+    this._lastHealthTick = 0;
+    this._respawnHandler = null;
 
     this._setState(BOT_STATES.CONNECTING);
     botLog(this.id, 'info', `Connecting to ${this.record.host}:${this.record.port} as ${this.record.username}`);
@@ -138,7 +144,7 @@ class BotInstance extends EventEmitter {
     const old = this._state;
     if (old === newState) return;
     this._state = newState;
-    botLog(this.id, 'info', `State: ${old} → ${newState}`);
+    botLog(this.id, 'info', `State: ${old} \u2192 ${newState}`);
     this.emit('stateChange', old, newState);
   }
 
@@ -156,6 +162,13 @@ class BotInstance extends EventEmitter {
     this._clearTimers();
     if (this._bot) {
       try {
+        // Cancel any active pathfinding before tearing the client down so the
+        // physics/tick loop cannot keep recomputing a goal after teardown.
+        this._bot.pathfinder?.setGoal(null);
+      } catch (_) {
+        /* ignore */
+      }
+      try {
         this._bot.removeAllListeners();
         this._bot.quit(reason);
       } catch (_) {
@@ -163,6 +176,8 @@ class BotInstance extends EventEmitter {
       }
       this._bot = null;
     }
+    this._lastHealthTick = 0;
+    this._respawnHandler = null;
   }
 
   /** Full teardown for permanent removal. */
