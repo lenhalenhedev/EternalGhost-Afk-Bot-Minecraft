@@ -1,24 +1,5 @@
 'use strict';
 
-/**
- * One-off migration: bots.json  →  PostgreSQL.
- *
- * Reads the legacy JSON store (default ./data/bots.json or $DATA_FILE), then
- * inserts every bot, its subsystem configs, user selections and a "migrated"
- * activity-log entry into Postgres. Existing data is preserved – each bot is
- * UPSERTed by id, so the script is safe to re-run (idempotent).
- *
- * Credentials are copied across verbatim as already-encrypted payloads; the
- * script never decrypts anything, so your ENCRYPTION_KEY keeps working
- * unchanged after the move.
- *
- * Usage:
- *   1. Create the schema first:  psql "$DATABASE_URL" -f db/schema.sql
- *   2. Run:                       node scripts/migrateJsonToPg.js
- *      Dry run (no writes):       node scripts/migrateJsonToPg.js --dry-run
- *      Custom file:               node scripts/migrateJsonToPg.js ./backup/bots.json
- */
-
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -33,9 +14,24 @@ const {
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const fileArg = args.find((a) => !a.startsWith('--'));
-const DATA_FILE = path.resolve(
+
+// --- FIX PATH TRAVERSAL TẠI ĐÂY ---
+// Định nghĩa thư mục gốc an toàn là thư mục dự án (EternalGhost-Afk-Bot-Minecraft)
+const ALLOWED_DIR = path.resolve(__dirname, '..');
+
+// Tìm đường dẫn tuyệt đối của file đích
+let TARGET_FILE = path.resolve(
   fileArg || process.env.DATA_FILE || './data/bots.json',
 );
+
+// Nếu người dùng chủ động truyền tham số, phải kiểm tra xem có đi lùi ra ngoài thư mục dự án không
+if (fileArg && !TARGET_FILE.startsWith(ALLOWED_DIR)) {
+  console.error('[migrate] FAILED: Địt mẹ mày định đi lùi thư mục để hack hệ thống à? Cút!');
+  process.exit(1);
+}
+
+const DATA_FILE = TARGET_FILE;
+// ---------------------------------
 
 function log(...m) { console.log('[migrate]', ...m); }
 
@@ -57,8 +53,6 @@ function readJson() {
   };
 }
 
-// Merge any per-bot config the JSON happened to carry over the defaults so
-// older files (which only stored core fields) still migrate cleanly.
 function antiAfkOf(bot) { return { ...DEFAULT_ANTIAFK, ...(bot.antiAfk || {}) }; }
 function autoEatOf(bot) { return { ...DEFAULT_AUTOEAT, ...(bot.autoEat || {}) }; }
 function combatOf(bot)  { return { ...DEFAULT_COMBAT,  ...(bot.combat  || {}) }; }
