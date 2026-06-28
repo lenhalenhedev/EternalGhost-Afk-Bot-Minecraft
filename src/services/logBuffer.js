@@ -1,15 +1,18 @@
 'use strict';
-
 // Pure, dependency-free log-buffering primitives.
 //
-// Deliberately requires NOTHING (no winston, no config) so it stays unit
-// testable and side-effect free. `logger.js` owns the winston transports and
-// composes a single LogBuffers instance for the per-bot ring buffer, the
-// Discord summary buffer, and alert-cooldown tracking.
+// MEMORY LEAK FIXES:
+// - _cooldowns Map now has periodic pruning of expired entries to prevent
+//   unbounded growth over time (each unique alert key stays forever otherwise)
+// - clearBot() uses Array.from() to safely iterate while deleting from Map
+// - Added pruneCooldowns() method for explicit cleanup
+// - Added destroy() for graceful shutdown
 
 const BOT_BUFFER_SIZE = 200; // max retained log lines per bot
 const SUMMARY_MAX = 100; // max summary entries retained between flushes
 const ALERT_COOLDOWN_MS = 45_000; // min spacing between identical alerts
+const COOLDOWN_PRUNE_INTERVAL = 300_000; // prune expired cooldowns every 5 min
+const MAX_COOLDOWN_ENTRIES = 10_000; // hard cap to prevent unbounded growth
 
 class LogBuffers {
   constructor(opts = {}) {
@@ -23,6 +26,14 @@ class LogBuffers {
     this._summary = [];
     /** @type {Map<string, number>} key => lastSentTs */
     this._cooldowns = new Map();
+    this._lastPrune = Date.now();
+
+    // FIX: Set up periodic pruning of expired cooldown entries.
+    // Without this, the cooldowns Map grows indefinitely as new unique keys
+    // are added (e.g., botId:death, botId:disconnect for every bot over time).
+    this._pruneTimer = setInterval(() => this.pruneCooldowns(), COOLDOWN_PRUNE_INTERVAL);
+    // Ensure the timer doesn't prevent process exit
+    if (this._pruneTimer.unref) this._pruneTimer.unref();
   }
 
   _bufferFor(botId) {
@@ -72,16 +83,42 @@ class LogBuffers {
     const last = this._cooldowns.get(key) || 0;
     if (now - last < this._alertCooldownMs) return false;
     this._cooldowns.set(key, now);
+
+    // FIX: Inline safety check - if the map grows beyond a hard cap, force prune.
+    if (this._cooldowns.size > MAX_COOLDOWN_ENTRIES) {
+      this.pruneCooldowns(now);
+    }
     return true;
+  }
+
+  /**
+   * FIX: Remove expired cooldown entries from the Map.
+   * Prevents unbounded growth when many unique alert keys accumulate.
+   */
+  pruneCooldowns(now = Date.now()) {
+    const expiry = now - this._alertCooldownMs * 2;
+    for (const [key, ts] of this._cooldowns) {
+      if (ts < expiry) {
+        this._cooldowns.delete(key);
+      }
+    }
+    this._lastPrune = now;
   }
 
   /** Drop all retained state for a bot (call on deletion to avoid leaks). */
   clearBot(botId) {
     this._botLogs.delete(botId);
     const prefix = `${botId}:`;
-    for (const key of this._cooldowns.keys()) {
+    // FIX: Use Array.from() to safely iterate while deleting from the Map.
+    for (const key of Array.from(this._cooldowns.keys())) {
       if (key === botId || key.startsWith(prefix)) this._cooldowns.delete(key);
     }
+  }
+
+  /** Stop the internal prune timer (call on shutdown). */
+  destroy() {
+    clearInterval(this._pruneTimer);
+    this._pruneTimer = null;
   }
 }
 

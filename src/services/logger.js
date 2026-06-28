@@ -57,26 +57,18 @@ const logger = winston.createLogger({
   exitOnError: false,
 });
 
-// ─── In-memory buffers (per-bot ring buffer, Discord summary, alert cooldowns) ─
-// Pure buffering logic lives in ./logBuffer so it can be unit tested without
-// pulling in winston/config. This module owns winston transports + wiring only.
+// ─── In-memory buffers ────────────────────────────────────────────────────────
 const { LogBuffers } = require('./logBuffer');
 const buffers = new LogBuffers();
 
-/** Retrieve recent logs for a bot (newest last). 0 maxAgeMs = no age limit. */
 function getBotLogs(botId, maxLines = 50, maxAgeMs = 0) {
   return buffers.getBotLogs(botId, maxLines, maxAgeMs);
 }
 
-/** Queue a warn/error line for the next Discord summary flush. */
 function addToSummary(level, botId, message) {
   buffers.addToSummary(level, botId, message);
 }
 
-/**
- * Flush the summary buffer to a formatted Markdown string (or null if empty).
- * Called by BotManager on a cron interval.
- */
 function flushSummary() {
   const entries = buffers.drainSummary();
   if (entries.length === 0) return null;
@@ -88,11 +80,6 @@ function flushSummary() {
     .join('\n');
 }
 
-/**
- * Check and set alert cooldown.
- * @param {string} key  e.g. `${botId}:death`
- * @returns {boolean} true if alert should be sent
- */
 function checkAlertCooldown(key) {
   return buffers.checkAlertCooldown(key);
 }
@@ -102,7 +89,16 @@ function clearBotState(botId) {
   buffers.clearBot(botId);
 }
 
-// ─── Convenience wrapper that also writes to per-bot buffer + summary ─────────
+/**
+ * FIX: Shutdown the logger and its internal buffers cleanly.
+ * This stops the periodic prune timer in LogBuffers and closes winston transports.
+ */
+function shutdown() {
+  buffers.destroy();
+  logger.close();
+}
+
+// ─── Convenience wrapper ──────────────────────────────────────────────────────
 function botLog(botId, level, message) {
   logger.log({ level, message, botId });
   buffers.pushBotLog(botId, level, message);
@@ -119,4 +115,5 @@ module.exports = {
   addToSummary,
   checkAlertCooldown,
   clearBotState,
+  shutdown,
 };

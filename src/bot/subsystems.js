@@ -1,22 +1,20 @@
 'use strict';
-
 const AntiAFK = require('./AntiAFK');
 const Combat = require('./Combat');
 const Inventory = require('./Inventory');
 const AutoEat = require('./AutoEat');
 
 /**
- * Owns the lifecycle of a bot's gameplay subsystems (anti-AFK, combat,
- * inventory, auto-eat). Extracted from BotInstance so the orchestrator only
- * deals with the state machine while this class deals with wiring/teardown
- * (single responsibility).
+ * Owns the lifecycle of a bot's gameplay subsystems.
  *
- * Both `startPlaying` and `startAFK` are IDEMPOTENT: they tear down any existing
- * subsystem before creating a replacement. This is critical — a respawn (or a
- * death during the settle window) can call these again while old instances are
- * still live, and overwriting the reference without stopping it first would
- * orphan its setInterval timers forever, compounding on every death until the
- * process pins a CPU core and bloats RAM.
+ * MEMORY LEAK FIXES:
+ * - Both `startPlaying` and `startAFK` are IDEMPOTENT: they tear down any
+ *   existing subsystem before creating a replacement.
+ * - This is critical — a respawn (or a death during the settle window) can call
+ *   these again while old instances are still live, and overwriting the reference
+ *   without stopping it first would orphan its setInterval timers forever,
+ *   compounding on every death until the process pins a CPU core and bloats RAM.
+ * - stopAll() explicitly nullifies all references after stopping to aid GC.
  */
 class Subsystems {
   constructor(id) {
@@ -29,11 +27,17 @@ class Subsystems {
 
   /** Create inventory + auto-eat when the bot starts playing. */
   startPlaying(bot, emit) {
-    // Idempotent: stop a previous auto-eat checker before replacing it.
+    // FIX: Idempotent — stop a previous auto-eat checker before replacing it.
+    // Without this, the old AutoEat's setInterval keeps running after the
+    // reference is overwritten, leaking the interval timer.
     if (this.autoEat) {
       this.autoEat.stop();
       this.autoEat = null;
     }
+    // FIX: Also stop inventory if it existed (though Inventory has no timers,
+    // clearing the reference helps GC release the old bot reference).
+    this.inventory = null;
+
     this.inventory = new Inventory(bot, this.id, emit);
     this.autoEat = new AutoEat(bot, this.id, emit);
     this.autoEat.start();
@@ -41,8 +45,8 @@ class Subsystems {
 
   /** Start anti-AFK wandering and combat scanning once in AFK mode. */
   startAFK(bot, onCombatEvent) {
-    // Idempotent: stop any previous instances so their interval timers are
-    // cleared before we drop the references and create fresh ones.
+    // FIX: Idempotent — stop any previous instances so their interval timers
+    // are cleared before we drop the references and create fresh ones.
     if (this.antiAFK) {
       this.antiAFK.stop();
       this.antiAFK = null;

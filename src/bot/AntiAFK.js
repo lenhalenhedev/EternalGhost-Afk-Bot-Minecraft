@@ -1,60 +1,57 @@
 'use strict';
-
-const { goals, Movements } = require('mineflayer-pathfinder');
-const Vec3 = require('vec3');
+const { Vec3 } = require('vec3');
+const { Movements, goals } = require('mineflayer-pathfinder');
 const { randInt, randFloat, withTimeout } = require('../utils/helpers');
 const { botLog } = require('../services/logger');
 const { ANTI_AFK } = require('./antiafk/antiAfkConfig');
 const { pickTarget } = require('./antiafk/safeSpot');
 const { gotoWithStuckDetection } = require('./antiafk/movement');
 
-// Factory passed into the pure safeSpot helpers. bot.blockAt requires a real
-// Vec3 instance – the previous code passed plain {x,y,z} objects, so every
-// safety check silently failed and the bot could wander into hazards.
 const vec3 = (x, y, z) => new Vec3(x, y, z);
 
 /**
- * Keeps a bot from being kicked for inactivity by wandering within a small
- * radius of its anchor and periodically looking around. Spatial reasoning lives
- * in `antiafk/safeSpot`, tuning in `antiafk/antiAfkConfig`, and pathfinding in
- * `antiafk/movement`.
+ * Keeps a bot from being kicked for inactivity.
+ *
+ * MEMORY LEAK FIXES:
+ * - pauseForCombat() now properly nullifies timer references after clearing
+ * - resumeAfterCombat() checks if timers already exist before creating new ones
+ *   to prevent duplicate interval/timeout accumulation
+ * - _scheduleRotation() clears existing rotation timer before creating a new one
+ * - _scheduleMove() clears existing move timer before creating a new one
+ * - stop() is fully idempotent
  */
 class AntiAFK {
   constructor(bot, botId) {
     this.bot = bot;
     this.botId = botId;
-    this.anchor = null; // Vec3 – set when AFK starts
+    this.anchor = null;
     this._timer = null;
     this._rotTimer = null;
     this._active = false;
     this._moving = false;
   }
 
-  /** Start anti-AFK movement. Call after the bot settles into PLAYING state. */
   start() {
     if (this._active) return;
     this._active = true;
     this.anchor = this.bot.entity.position.clone();
-
     const movements = new Movements(this.bot);
     movements.canDig = false;
     movements.allow1by1towers = false;
     movements.allowParkour = false;
-    movements.allowSprinting = false; // quieter
-    movements.maxDropDown = 3; // never fall more than 3 blocks
+    movements.allowSprinting = false;
+    movements.maxDropDown = 3;
     movements.blockDangerFaces = true;
     this.bot.pathfinder.setMovements(movements);
-
     botLog(this.botId, 'info', `AntiAFK started. Anchor: ${JSON.stringify(this.anchor)}`);
     this._scheduleMove();
     this._scheduleRotation();
   }
 
-  /** Stop all anti-AFK activity. */
   stop() {
     this._active = false;
     clearTimeout(this._timer);
-    clearInterval(this._rotTimer); // rotation runs on setInterval
+    clearInterval(this._rotTimer);
     this._timer = null;
     this._rotTimer = null;
     try {
@@ -68,6 +65,9 @@ class AntiAFK {
 
   _scheduleMove() {
     if (!this._active) return;
+    // FIX: Clear any existing timer before scheduling a new one to prevent
+    // duplicate timers from accumulating (e.g., if called multiple times).
+    clearTimeout(this._timer);
     const delay = randInt(ANTI_AFK.MIN_INTERVAL, ANTI_AFK.MAX_INTERVAL);
     this._timer = setTimeout(() => this._doMove(), delay);
   }
@@ -75,7 +75,6 @@ class AntiAFK {
   async _doMove() {
     if (!this._active) return;
     this._moving = true;
-
     for (let attempt = 0; attempt < ANTI_AFK.MAX_RETRIES; attempt++) {
       const target = pickTarget(this.bot, vec3, this.anchor);
       if (!target) {
@@ -89,18 +88,16 @@ class AntiAFK {
           ANTI_AFK.MOVE_TIMEOUT,
           'AntiAFK move',
         );
-        break; // success
+        break;
       } catch (err) {
         botLog(this.botId, 'debug', `AntiAFK attempt ${attempt + 1}/${ANTI_AFK.MAX_RETRIES} failed: ${err.message}`);
         if (attempt === ANTI_AFK.MAX_RETRIES - 1) await this._returnToAnchor();
       }
     }
-
     this._moving = false;
     if (this._active) this._scheduleMove();
   }
 
-  /** Walk back to the anchor after a failed wander cycle. */
   async _returnToAnchor() {
     if (!this.anchor) return;
     botLog(this.botId, 'debug', 'AntiAFK: returning to anchor.');
@@ -112,9 +109,11 @@ class AntiAFK {
     }
   }
 
-  /** Periodically look around to avoid "frozen camera" AFK kicks. */
   _scheduleRotation() {
     if (!this._active) return;
+    // FIX: Clear existing rotation timer before creating a new one to prevent
+    // interval accumulation when resumeAfterCombat is called multiple times.
+    clearInterval(this._rotTimer);
     this._rotTimer = setInterval(() => {
       if (!this._active || this._moving) return;
       try {
@@ -129,6 +128,7 @@ class AntiAFK {
 
   /** Called when combat starts – stop moving immediately. */
   pauseForCombat() {
+    // FIX: Clear and nullify both timers to prevent dangling references
     clearTimeout(this._timer);
     clearInterval(this._rotTimer);
     this._timer = null;
@@ -145,9 +145,15 @@ class AntiAFK {
   /** Resume after combat ends. */
   resumeAfterCombat() {
     if (!this._active) return;
+    // FIX: Only schedule if not already scheduled (prevents duplicate timers
+    // if resumeAfterCombat is called multiple times without a pause in between).
+    if (!this._timer) {
+      this._scheduleMove();
+    }
+    if (!this._rotTimer) {
+      this._scheduleRotation();
+    }
     botLog(this.botId, 'debug', 'AntiAFK resumed after combat.');
-    this._scheduleMove();
-    this._scheduleRotation();
   }
 
   get isActive() {

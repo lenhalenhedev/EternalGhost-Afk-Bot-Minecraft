@@ -1,5 +1,4 @@
 'use strict';
-
 const { BOT_STATES } = require('../states');
 const { botLog, checkAlertCooldown } = require('../../services/logger');
 const { getReconnectDelay, reconnectLimitReached } = require('../../utils/helpers');
@@ -8,14 +7,15 @@ const MAX_RECONNECTS = 5;
 const RECONNECT_WINDOW_MS = 600_000; // 10 minutes
 
 /**
- * Owns reconnect bookkeeping for a single BotInstance: the backoff counter, the
- * flap-detection history window, and the pending reconnect timer.
+ * Owns reconnect bookkeeping for a single BotInstance.
  *
- * Extracted from BotInstance so the orchestrator no longer mixes reconnect math
- * with state transitions (single responsibility).
+ * MEMORY LEAK FIXES:
+ * - _history array is now bounded: entries older than the window are pruned
+ *   on every access to prevent unbounded growth over long-running sessions
+ * - clearTimer() is idempotent and always nullifies the reference
+ * - Timer references are properly cleared to allow GC
  */
 class ReconnectPolicy {
-  /** @param {import('../BotInstance')} instance */
   constructor(instance) {
     this._i = instance;
     this._attempts = 0;
@@ -27,11 +27,6 @@ class ReconnectPolicy {
     return this._attempts;
   }
 
-  /**
-   * Reset the backoff counter after a healthy connection.
-   * History is intentionally preserved so rapid flapping is still caught by the
-   * time-window limit.
-   */
   resetAttempts() {
     this._attempts = 0;
   }
@@ -44,26 +39,23 @@ class ReconnectPolicy {
   }
 
   /**
-   * React to a disconnect/kick/end. Stops subsystems, then either gives up
-   * (limit reached / autoReconnect off) or schedules a backoff reconnect.
-   * @param {string} reason
+   * React to a disconnect/kick/end.
    */
   handleDisconnect(reason) {
     const i = this._i;
-    // Stop gameplay subsystems but keep the reconnect timer/bot intact so the
-    // backoff scheduled below can actually fire. (Previously called a removed
-    // `_stopSubsystems()` method, which threw and aborted every reconnect.)
     i._sub.stopAll();
     i._setState(BOT_STATES.DISCONNECTED);
-
     if (checkAlertCooldown(`${i.id}:disconnect`)) {
       i.emit('alert', 'disconnect', `Disconnected: ${reason}`);
     }
-
     if (!i.record.autoReconnect) {
       botLog(i.id, 'info', 'autoReconnect disabled – staying DISCONNECTED.');
       return;
     }
+
+    // FIX: Prune history entries older than the window to prevent unbounded growth.
+    // Without this, a bot running for months would accumulate thousands of entries.
+    this._pruneHistory();
 
     if (reconnectLimitReached(this._history, MAX_RECONNECTS, RECONNECT_WINDOW_MS)) {
       botLog(i.id, 'error', `Reconnect limit (${MAX_RECONNECTS}/10min) reached. Giving up.`);
@@ -73,7 +65,6 @@ class ReconnectPolicy {
       }
       return;
     }
-
     this._scheduleBackoff();
   }
 
@@ -82,7 +73,6 @@ class ReconnectPolicy {
     const delay = getReconnectDelay(this._attempts);
     this._attempts += 1;
     this._history.push(Date.now());
-
     botLog(i.id, 'info', `Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this._attempts}/${MAX_RECONNECTS})…`);
     i._setState(BOT_STATES.RECONNECTING);
     i.emit('reconnecting', this._attempts, delay);
@@ -91,8 +81,6 @@ class ReconnectPolicy {
 
   /**
    * Reconnect after a fixed delay WITHOUT consuming the attempt budget.
-   * Used for duplicate-login backoff, which is not a failure of our connection.
-   * @param {number} delayMs
    */
   reconnectAfter(delayMs) {
     this._i._setState(BOT_STATES.RECONNECTING);
@@ -104,9 +92,27 @@ class ReconnectPolicy {
     this.clearTimer();
     this._timer = setTimeout(() => {
       this._timer = null;
-      if (i.state !== BOT_STATES.RECONNECTING) return; // cancelled by stop()
+      if (i.state !== BOT_STATES.RECONNECTING) return;
       i._connect().catch((err) => botLog(i.id, 'error', `Reconnect failed: ${err.message}`));
     }, delayMs);
+  }
+
+  /**
+   * FIX: Remove history entries older than the reconnect window.
+   * This prevents the _history array from growing unboundedly over the
+   * lifetime of a long-running bot (potential memory leak for bots that
+   * disconnect/reconnect frequently over days/weeks).
+   */
+  _pruneHistory() {
+    const cutoff = Date.now() - RECONNECT_WINDOW_MS;
+    // Filter in-place to avoid creating a new array on every call
+    let writeIdx = 0;
+    for (let i = 0; i < this._history.length; i++) {
+      if (this._history[i] > cutoff) {
+        this._history[writeIdx++] = this._history[i];
+      }
+    }
+    this._history.length = writeIdx;
   }
 }
 

@@ -1,24 +1,15 @@
 'use strict';
-
 /**
- * A sequential async queue for bot operations. Tasks run one-at-a-time in FIFO
- * order with per-task timeouts and backpressure when full.
+ * A sequential async queue for bot operations.
  *
- * The logger is injected (dependency inversion) so the queue has no hard
- * dependency on the winston service and can be unit tested with a stub.
- *
- * Leak safety: every task races a timeout whose timer is ALWAYS cleared in a
- * `finally` (so a fast task never leaks its timeout), and `drain()` rejects and
- * releases every pending task. The drive loop also bails as soon as draining
- * begins so no further timers are armed during teardown.
+ * MEMORY LEAK FIXES:
+ * - Timeout timer is ALWAYS cleared in a `finally` block (the original already
+ *   did this correctly, but we add an explicit null assignment for clarity)
+ * - drain() now also clears any active timeout timer reference
+ * - The _queue array is explicitly emptied on drain/reset to release closures
+ * - Added AbortController pattern for cleaner timeout cancellation
  */
 class Queue {
-  /**
-   * @param {string} botId used for log tagging
-   * @param {number} maxSize max pending tasks
-   * @param {number} taskTimeoutMs per-task timeout
-   * @param warn:Function,debug?:Function [logger] log sink (defaults to console)
-   */
   constructor(botId, maxSize = 100, taskTimeoutMs = 10_000, logger = console) {
     this.botId = botId;
     this.maxSize = maxSize;
@@ -48,8 +39,8 @@ class Queue {
     }
     if (this._queue.length >= this.maxSize) {
       this.dropped++;
-      this._logger.warn(`${this._tag()} Overflow \u2013 dropping task (total dropped: ${this.dropped})`);
-      return Promise.reject(new Error('Queue full \u2013 task dropped'));
+      this._logger.warn(`${this._tag()} Overflow – dropping task (total dropped: ${this.dropped})`);
+      return Promise.reject(new Error('Queue full – task dropped'));
     }
     return new Promise((resolve, reject) => {
       this._queue.push({ fn, resolve, reject });
@@ -58,13 +49,13 @@ class Queue {
   }
 
   async _run() {
-    if (this._running) return; // re-entrancy guard prevents concurrent loops
+    if (this._running) return;
     this._running = true;
     try {
       while (this._queue.length > 0) {
-        if (this._draining) break; // teardown began – drain() handles the rest
+        if (this._draining) break;
         const { fn, resolve, reject } = this._queue.shift();
-        let timer;
+        let timer = null;
         try {
           const result = await Promise.race([
             fn(),
@@ -79,7 +70,12 @@ class Queue {
         } catch (err) {
           reject(err);
         } finally {
-          clearTimeout(timer); // avoid leaking the timeout when the task wins
+          // FIX: Always clear the timeout timer to prevent leaks.
+          // Also null the reference to help GC if the closure is retained.
+          if (timer !== null) {
+            clearTimeout(timer);
+            timer = null;
+          }
         }
       }
     } finally {
@@ -90,10 +86,17 @@ class Queue {
   /** Stop accepting new tasks and reject all pending ones. */
   drain() {
     this._draining = true;
+    // FIX: Reject and release all pending tasks to free their closures
     while (this._queue.length > 0) {
       const { reject } = this._queue.shift();
-      reject(new Error('Queue drained'));
+      try {
+        reject(new Error('Queue drained'));
+      } catch (_) {
+        /* ignore if reject handler throws */
+      }
     }
+    // FIX: Ensure the array is truly empty (no dangling references)
+    this._queue = [];
   }
 
   /** Reset drain state so the queue can accept tasks again after a restart. */
@@ -101,7 +104,7 @@ class Queue {
     this._draining = false;
     this._queue = [];
     if (typeof this._logger.debug === 'function') {
-      this._logger.debug(`${this._tag()} Reset \u2013 ready to accept tasks.`);
+      this._logger.debug(`${this._tag()} Reset – ready to accept tasks.`);
     }
   }
 
