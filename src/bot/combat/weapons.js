@@ -54,4 +54,9 @@ function equipBestWeapon(bot) {
   }
 }
 
-module.exports = { WEAPON_PRIORITY, weaponScore, bestWeaponSlot, equipBestWeapon };
+module.exports = {
+  WEAPON_PRIORITY,
+  weaponScore,
+  bestWeaponSlot,
+  equipBestWeapon,
+};

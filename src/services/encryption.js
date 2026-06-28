@@ -1,11 +1,11 @@
 'use strict';
 const crypto = require('crypto');
 
-const ALGORITHM    = 'aes-256-gcm';
-const IV_LENGTH    = 12;   // 96-bit IV is optimal for GCM
-const TAG_LENGTH   = 16;   // 128-bit auth tag
-const SEP          = ':';
-const VERSION      = '1';  // format version prefix for future migrations
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 12; // 96-bit IV is optimal for GCM
+const TAG_LENGTH = 16; // 128-bit auth tag
+const SEP = ':';
+const VERSION = '1'; // format version prefix for future migrations
 
 /**
  * Derive a short fingerprint from a hex key so we can detect which key
@@ -13,7 +13,11 @@ const VERSION      = '1';  // format version prefix for future migrations
  * the key itself.
  */
 function fingerprint(hexKey) {
-  return crypto.createHash('sha256').update(hexKey, 'hex').digest('hex').slice(0, 8);
+  return crypto
+    .createHash('sha256')
+    .update(hexKey, 'hex')
+    .digest('hex')
+    .slice(0, 8);
 }
 
 /**
@@ -27,13 +31,21 @@ function fingerprint(hexKey) {
 function encrypt(plaintext, hexKey) {
   if (!plaintext) return '';
   const key = Buffer.from(hexKey, 'hex');
-  const iv  = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, {
+    authTagLength: TAG_LENGTH,
+  });
 
   const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
 
-  return [VERSION, fingerprint(hexKey), iv.toString('hex'), tag.toString('hex'), enc.toString('hex')].join(SEP);
+  return [
+    VERSION,
+    fingerprint(hexKey),
+    iv.toString('hex'),
+    tag.toString('hex'),
+    enc.toString('hex'),
+  ].join(SEP);
 }
 
 /**
@@ -57,27 +69,39 @@ function decrypt(payload, currentKey, oldKey = null) {
 
   const currentFp = fingerprint(currentKey);
   if (fp === currentFp) {
-    return { plaintext: _decrypt(cipherHex, ivHex, tagHex, currentKey), rotationNeeded: false };
+    return {
+      plaintext: _decrypt(cipherHex, ivHex, tagHex, currentKey),
+      rotationNeeded: false,
+    };
   }
 
   if (oldKey) {
     const oldFp = fingerprint(oldKey);
     if (fp === oldFp) {
-      return { plaintext: _decrypt(cipherHex, ivHex, tagHex, oldKey), rotationNeeded: true };
+      return {
+        plaintext: _decrypt(cipherHex, ivHex, tagHex, oldKey),
+        rotationNeeded: true,
+      };
     }
   }
 
-  throw new Error(`No matching key for fingerprint "${fp}". Check ENCRYPTION_KEY / OLD_ENCRYPTION_KEY.`);
+  throw new Error(
+    `No matching key for fingerprint "${fp}". Check ENCRYPTION_KEY / OLD_ENCRYPTION_KEY.`
+  );
 }
 
 function _decrypt(cipherHex, ivHex, tagHex, hexKey) {
-  const key      = Buffer.from(hexKey, 'hex');
-  const iv       = Buffer.from(ivHex, 'hex');
-  const tag      = Buffer.from(tagHex, 'hex');
-  const cipher   = Buffer.from(cipherHex, 'hex');
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
+  const key = Buffer.from(hexKey, 'hex');
+  const iv = Buffer.from(ivHex, 'hex');
+  const tag = Buffer.from(tagHex, 'hex');
+  const cipher = Buffer.from(cipherHex, 'hex');
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, {
+    authTagLength: TAG_LENGTH,
+  });
   decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(cipher), decipher.final()]).toString('utf8');
+  return Buffer.concat([decipher.update(cipher), decipher.final()]).toString(
+    'utf8'
+  );
 }
 
 /**

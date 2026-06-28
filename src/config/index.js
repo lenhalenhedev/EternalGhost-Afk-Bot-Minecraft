@@ -3,7 +3,8 @@ require('dotenv').config();
 
 function requireEnv(key) {
   const val = process.env[key];
-  if (!val || val.trim() === '') throw new Error(`Missing required env var: ${key}`);
+  if (!val || val.trim() === '')
+    throw new Error(`Missing required env var: ${key}`);
   return val.trim();
 }
 
@@ -19,7 +20,9 @@ const HARDCODED_LOG_CHANNEL_ID = '';
 
 function validateHexKey(key, name) {
   if (!/^[0-9a-fA-F]{64}$/.test(key)) {
-    throw new Error(`${name} must be a 64-char hex string (32 bytes). Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`);
+    throw new Error(
+      `${name} must be a 64-char hex string (32 bytes). Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+    );
   }
 }
 
@@ -31,47 +34,57 @@ try {
   const oldKey = optionalEnv('OLD_ENCRYPTION_KEY');
   if (oldKey) validateHexKey(oldKey, 'OLD_ENCRYPTION_KEY');
 
-  const adminIds = requireEnv('ADMIN_USER_IDS').split(',').map(s => s.trim()).filter(Boolean);
-  if (adminIds.length === 0) throw new Error('ADMIN_USER_IDS must contain at least one Discord user ID');
+  const adminIds = requireEnv('ADMIN_USER_IDS')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (adminIds.length === 0)
+    throw new Error('ADMIN_USER_IDS must contain at least one Discord user ID');
 
   config = {
     discord: {
-      token:          requireEnv('DISCORD_TOKEN'),
-      clientId:       requireEnv('DISCORD_CLIENT_ID'),
-      guildId:        optionalEnv('DISCORD_GUILD_ID'),
+      token: requireEnv('DISCORD_TOKEN'),
+      clientId: requireEnv('DISCORD_CLIENT_ID'),
+      guildId: optionalEnv('DISCORD_GUILD_ID'),
       alertChannelId: optionalEnv('DISCORD_ALERT_CHANNEL_ID'),
       auditChannelId: optionalEnv('DISCORD_AUDIT_CHANNEL_ID'),
-      logChannelId:   optionalEnv('DISCORD_LOG_CHANNEL_ID', HARDCODED_LOG_CHANNEL_ID),
+      logChannelId: optionalEnv(
+        'DISCORD_LOG_CHANNEL_ID',
+        HARDCODED_LOG_CHANNEL_ID
+      ),
     },
     access: {
       adminIds,
     },
     encryption: {
-      key:    encryptionKey,
+      key: encryptionKey,
       oldKey: oldKey || null,
     },
     storage: {
       // Retained only for the one-off JSON→Postgres migration script.
       dataFile: optionalEnv('DATA_FILE', './data/bots.json'),
-      logDir:   optionalEnv('LOG_DIR', './logs'),
+      logDir: optionalEnv('LOG_DIR', './logs'),
       logLevel: optionalEnv('LOG_LEVEL', 'info'),
     },
     // Primary datastore is now PostgreSQL. The pg Pool itself is built in
     // src/config/database.js (it reads these same env vars); this block is
     // surfaced here so the rest of the app can introspect the settings.
     database: {
-      url:      optionalEnv('DATABASE_URL'),
-      host:     optionalEnv('PGHOST', 'localhost'),
-      port:     parseInt(optionalEnv('PGPORT', '5432'), 10),
-      user:     optionalEnv('PGUSER'),
+      url: optionalEnv('DATABASE_URL'),
+      host: optionalEnv('PGHOST', 'localhost'),
+      port: parseInt(optionalEnv('PGPORT', '5432'), 10),
+      user: optionalEnv('PGUSER'),
       database: optionalEnv('PGDATABASE'),
-      poolMax:  parseInt(optionalEnv('DB_POOL_MAX', '10'), 10),
+      poolMax: parseInt(optionalEnv('DB_POOL_MAX', '10'), 10),
     },
     limits: {
-      maxBots:              parseInt(optionalEnv('MAX_BOTS', '50'), 10),
-      queueSize:            parseInt(optionalEnv('BOT_QUEUE_SIZE', '100'), 10),
-      queueTimeout:         parseInt(optionalEnv('BOT_QUEUE_TIMEOUT', '10000'), 10),
-      logSummaryIntervalMin:parseInt(optionalEnv('LOG_SUMMARY_INTERVAL_MIN', '15'), 10),
+      maxBots: parseInt(optionalEnv('MAX_BOTS', '50'), 10),
+      queueSize: parseInt(optionalEnv('BOT_QUEUE_SIZE', '100'), 10),
+      queueTimeout: parseInt(optionalEnv('BOT_QUEUE_TIMEOUT', '10000'), 10),
+      logSummaryIntervalMin: parseInt(
+        optionalEnv('LOG_SUMMARY_INTERVAL_MIN', '15'),
+        10
+      ),
     },
   };
 } catch (err) {

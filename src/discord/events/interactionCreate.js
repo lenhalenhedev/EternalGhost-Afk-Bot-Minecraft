@@ -2,7 +2,7 @@
 const { MessageFlags } = require('discord.js');
 const { logger } = require('../../services/logger');
 const { isAdmin } = require('../../utils/validators');
-const config      = require('../../config');
+const config = require('../../config');
 
 module.exports = {
   name: 'interactionCreate',
@@ -31,15 +31,25 @@ module.exports = {
     try {
       await command.execute(interaction);
     } catch (err) {
-      logger.error(`[Discord] Command /${interaction.commandName} threw: ${err.message}`);
+      logger.error(
+        `[Discord] Command /${interaction.commandName} threw: ${err.message}`
+      );
       const msg = `❌ Lỗi khi thực thi lệnh: \`${err.message}\``;
       try {
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+          await interaction.followUp({
+            content: msg,
+            flags: MessageFlags.Ephemeral,
+          });
         } else {
-          await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+          await interaction.reply({
+            content: msg,
+            flags: MessageFlags.Ephemeral,
+          });
         }
-      } catch (_) { /* ignore double-reply race */ }
+      } catch (_) {
+        /* ignore double-reply race */
+      }
     }
   },
 };

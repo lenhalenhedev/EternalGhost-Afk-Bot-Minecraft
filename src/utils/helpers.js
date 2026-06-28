@@ -55,7 +55,7 @@ function formatPos(pos) {
 /** Promise that rejects after `ms` ms with a labelled timeout error. */
 function rejectAfter(ms, label = 'Operation') {
   return new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
   );
 }
 

@@ -1,7 +1,10 @@
 'use strict';
 const { BOT_STATES } = require('../states');
 const { botLog, checkAlertCooldown } = require('../../services/logger');
-const { getReconnectDelay, reconnectLimitReached } = require('../../utils/helpers');
+const {
+  getReconnectDelay,
+  reconnectLimitReached,
+} = require('../../utils/helpers');
 
 const MAX_RECONNECTS = 5;
 const RECONNECT_WINDOW_MS = 600_000; // 10 minutes
@@ -57,8 +60,14 @@ class ReconnectPolicy {
     // Without this, a bot running for months would accumulate thousands of entries.
     this._pruneHistory();
 
-    if (reconnectLimitReached(this._history, MAX_RECONNECTS, RECONNECT_WINDOW_MS)) {
-      botLog(i.id, 'error', `Reconnect limit (${MAX_RECONNECTS}/10min) reached. Giving up.`);
+    if (
+      reconnectLimitReached(this._history, MAX_RECONNECTS, RECONNECT_WINDOW_MS)
+    ) {
+      botLog(
+        i.id,
+        'error',
+        `Reconnect limit (${MAX_RECONNECTS}/10min) reached. Giving up.`
+      );
       i._setState(BOT_STATES.ERROR);
       if (checkAlertCooldown(`${i.id}:reconnectFailed`)) {
         i.emit('alert', 'reconnectFailed', 'Reconnect limit reached');
@@ -73,7 +82,11 @@ class ReconnectPolicy {
     const delay = getReconnectDelay(this._attempts);
     this._attempts += 1;
     this._history.push(Date.now());
-    botLog(i.id, 'info', `Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this._attempts}/${MAX_RECONNECTS})…`);
+    botLog(
+      i.id,
+      'info',
+      `Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this._attempts}/${MAX_RECONNECTS})…`
+    );
     i._setState(BOT_STATES.RECONNECTING);
     i.emit('reconnecting', this._attempts, delay);
     this._armTimer(delay);
@@ -93,7 +106,9 @@ class ReconnectPolicy {
     this._timer = setTimeout(() => {
       this._timer = null;
       if (i.state !== BOT_STATES.RECONNECTING) return;
-      i._connect().catch((err) => botLog(i.id, 'error', `Reconnect failed: ${err.message}`));
+      i._connect().catch((err) =>
+        botLog(i.id, 'error', `Reconnect failed: ${err.message}`)
+      );
     }, delayMs);
   }
 

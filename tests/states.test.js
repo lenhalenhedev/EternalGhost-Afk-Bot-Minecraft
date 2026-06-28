@@ -3,7 +3,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  BOT_STATES, ALIVE_STATES, STARTABLE_STATES, STOPPABLE_STATES, STATE_COLORS, STATE_EMOJI,
+  BOT_STATES,
+  ALIVE_STATES,
+  STARTABLE_STATES,
+  STOPPABLE_STATES,
+  STATE_COLORS,
+  STATE_EMOJI,
 } = require('../src/bot/states');
 
 test('every state has a colour and emoji', () => {

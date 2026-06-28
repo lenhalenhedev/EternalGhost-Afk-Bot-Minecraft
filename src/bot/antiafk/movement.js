@@ -18,7 +18,12 @@
  * @param {number} stuckLimitMs
  * @param {number} [checkIntervalMs]
  */
-async function gotoWithStuckDetection(bot, goal, stuckLimitMs, checkIntervalMs = 1_000) {
+async function gotoWithStuckDetection(
+  bot,
+  goal,
+  stuckLimitMs,
+  checkIntervalMs = 1_000
+) {
   let lastPos = bot.entity.position.clone();
   let stuckMs = 0;
 

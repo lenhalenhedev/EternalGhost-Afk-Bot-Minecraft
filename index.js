@@ -1,10 +1,10 @@
 'use strict';
 require('dotenv').config();
-const config     = require('./src/config');
+const config = require('./src/config');
 const { logger } = require('./src/services/logger');
 const BotManager = require('./src/manager/BotManager');
-const client     = require('./src/discord/client');
-const db         = require('./src/config/database');
+const client = require('./src/discord/client');
+const db = require('./src/config/database');
 
 async function main() {
   logger.info('═══════════════════════════════════════════════');
@@ -40,7 +40,7 @@ async function main() {
   process.removeAllListeners('SIGINT');
   process.removeAllListeners('SIGTERM');
 
-  process.once('SIGINT',  () => shutdown('SIGINT'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
   process.once('SIGTERM', () => shutdown('SIGTERM'));
 
   // FIX: Use `once` or guard against duplicate registration for error handlers.
@@ -57,7 +57,7 @@ async function main() {
   }
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('[Main] Fatal startup error:', err);
   process.exit(1);
 });

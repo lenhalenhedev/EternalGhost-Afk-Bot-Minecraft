@@ -3,7 +3,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { encrypt, decrypt, needsRotation, fingerprint } = require('../src/services/encryption');
+const {
+  encrypt,
+  decrypt,
+  needsRotation,
+  fingerprint,
+} = require('../src/services/encryption');
 
 const KEY = crypto.randomBytes(32).toString('hex');
 const OLD_KEY = crypto.randomBytes(32).toString('hex');
@@ -45,7 +50,10 @@ test('decrypt throws when no key fingerprint matches', () => {
 });
 
 test('decrypt rejects malformed payloads', () => {
-  assert.throws(() => decrypt('not-a-valid-payload', KEY), /Invalid encrypted payload/);
+  assert.throws(
+    () => decrypt('not-a-valid-payload', KEY),
+    /Invalid encrypted payload/
+  );
 });
 
 test('needsRotation detects stale key', () => {

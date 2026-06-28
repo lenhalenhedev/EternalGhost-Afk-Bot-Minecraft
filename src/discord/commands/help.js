@@ -1,20 +1,51 @@
 'use strict';
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  MessageFlags,
+} = require('discord.js');
 
 const COMMANDS = [
-  { name: '/create-bot',   desc: 'Tạo bot mới. Cần: `host`, `port`, `username`, `version`. Tùy chọn: `password`, `auto-reconnect`.' },
-  { name: '/delete-bot',   desc: 'Xóa bot (sẽ stop trước, yêu cầu xác nhận). Cần: `id`.' },
-  { name: '/edit-bot',     desc: 'Chỉnh sửa config bot (yêu cầu stop trước). Cần: `id`. Tùy chọn: `host`, `port`, `version`, `password`, `auto-reconnect`.' },
-  { name: '/list-bot',     desc: 'Danh sách tất cả bot (phân trang). ⭐ = bot đang chọn.' },
-  { name: '/select-bot',   desc: 'Chọn bot để điều khiển mặc định. Cần: `id`.' },
-  { name: '/status-bot',   desc: 'Trạng thái chi tiết: state, tọa độ, HP, food, ping, uptime. Tùy chọn: `id`.' },
-  { name: '/start',        desc: 'Khởi động bot. Tùy chọn: `id`.' },
-  { name: '/stop',         desc: 'Dừng bot. Tùy chọn: `id`, `force`. Force stop = bỏ qua queue.' },
-  { name: '/restart',      desc: 'Khởi động lại bot. Tùy chọn: `id`.' },
-  { name: '/chat',         desc: 'Gửi chat vào game. Cần: `message`. Cooldown 2.5s. Max 200 ký tự. Không gửi lệnh `/` trừ whitelist.' },
-  { name: '/logs-bot',     desc: 'Xem log gần nhất. Tùy chọn: `id`, `lines` (max 50), `hours` (1-24h), `level`.' },
-  { name: '/stats',        desc: 'System health: RAM, CPU uptime, số bot theo state.' },
-  { name: '/help',         desc: 'Hiển thị trang trợ giúp này.' },
+  {
+    name: '/create-bot',
+    desc: 'Tạo bot mới. Cần: `host`, `port`, `username`, `version`. Tùy chọn: `password`, `auto-reconnect`.',
+  },
+  {
+    name: '/delete-bot',
+    desc: 'Xóa bot (sẽ stop trước, yêu cầu xác nhận). Cần: `id`.',
+  },
+  {
+    name: '/edit-bot',
+    desc: 'Chỉnh sửa config bot (yêu cầu stop trước). Cần: `id`. Tùy chọn: `host`, `port`, `version`, `password`, `auto-reconnect`.',
+  },
+  {
+    name: '/list-bot',
+    desc: 'Danh sách tất cả bot (phân trang). ⭐ = bot đang chọn.',
+  },
+  { name: '/select-bot', desc: 'Chọn bot để điều khiển mặc định. Cần: `id`.' },
+  {
+    name: '/status-bot',
+    desc: 'Trạng thái chi tiết: state, tọa độ, HP, food, ping, uptime. Tùy chọn: `id`.',
+  },
+  { name: '/start', desc: 'Khởi động bot. Tùy chọn: `id`.' },
+  {
+    name: '/stop',
+    desc: 'Dừng bot. Tùy chọn: `id`, `force`. Force stop = bỏ qua queue.',
+  },
+  { name: '/restart', desc: 'Khởi động lại bot. Tùy chọn: `id`.' },
+  {
+    name: '/chat',
+    desc: 'Gửi chat vào game. Cần: `message`. Cooldown 2.5s. Max 200 ký tự. Không gửi lệnh `/` trừ whitelist.',
+  },
+  {
+    name: '/logs-bot',
+    desc: 'Xem log gần nhất. Tùy chọn: `id`, `lines` (max 50), `hours` (1-24h), `level`.',
+  },
+  {
+    name: '/stats',
+    desc: 'System health: RAM, CPU uptime, số bot theo state.',
+  },
+  { name: '/help', desc: 'Hiển thị trang trợ giúp này.' },
 ];
 
 const STATE_GUIDE = [
@@ -37,15 +68,19 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const cmdFields = COMMANDS.map(c => ({ name: c.name, value: c.desc, inline: false }));
+    const cmdFields = COMMANDS.map((c) => ({
+      name: c.name,
+      value: c.desc,
+      inline: false,
+    }));
 
     const embed = new EmbedBuilder()
       .setColor(0x3498db)
       .setTitle('🎮 Discord Minecraft AFK Bot — Hướng Dẫn')
       .setDescription(
         '**Quản lý nhiều bot Minecraft AFK qua Discord Slash Commands.**\n' +
-        'Tất cả lệnh đều yêu cầu quyền Admin (cấu hình qua `ADMIN_USER_IDS` trong `.env`).\n\n' +
-        '> 💡 Tip: Dùng `/select-bot <id>` một lần, sau đó các lệnh `/start`, `/stop`, `/chat`... sẽ tự dùng bot đó.\n'
+          'Tất cả lệnh đều yêu cầu quyền Admin (cấu hình qua `ADMIN_USER_IDS` trong `.env`).\n\n' +
+          '> 💡 Tip: Dùng `/select-bot <id>` một lần, sau đó các lệnh `/start`, `/stop`, `/chat`... sẽ tự dùng bot đó.\n'
       )
       .addFields(
         ...cmdFields,

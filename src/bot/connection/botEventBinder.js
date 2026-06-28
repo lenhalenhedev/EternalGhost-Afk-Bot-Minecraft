@@ -37,14 +37,20 @@ function bindBotEvents(instance, bot) {
   }
   bot[BOUND] = true;
 
-  bot.once('login', () => botLog(instance.id, 'info', 'TCP login established. Waiting for spawn…'));
+  bot.once('login', () =>
+    botLog(instance.id, 'info', 'TCP login established. Waiting for spawn…')
+  );
 
   bot.once('spawn', () => {
     botLog(instance.id, 'info', 'Spawned in world.');
     instance._startTime = Date.now();
     instance._loginTimer = setTimeout(() => {
       if (instance.state === BOT_STATES.CONNECTING) {
-        botLog(instance.id, 'info', 'No auth prompt received – assuming no-auth server.');
+        botLog(
+          instance.id,
+          'info',
+          'No auth prompt received – assuming no-auth server.'
+        );
         instance._transitionToPlaying();
       }
     }, NO_AUTH_TIMEOUT_MS);
@@ -66,7 +72,8 @@ function bindBotEvents(instance, bot) {
   });
 
   bot.on('kicked', (reason) => {
-    const msg = typeof reason === 'object' ? JSON.stringify(reason) : String(reason);
+    const msg =
+      typeof reason === 'object' ? JSON.stringify(reason) : String(reason);
     botLog(instance.id, 'warn', `Kicked: ${msg}`);
     instance._reconnect.handleDisconnect(`Kicked: ${msg}`);
   });
@@ -95,7 +102,11 @@ function onServerMessage(instance, jsonMsg) {
 
   if (state === BOT_STATES.CONNECTING && authPatterns.isDuplicateLogin(msg)) {
     const delay = randInt(DUP_LOGIN_MIN_MS, DUP_LOGIN_MAX_MS);
-    botLog(instance.id, 'warn', `Duplicate login detected. Backing off ${Math.round(delay / 1000)}s…`);
+    botLog(
+      instance.id,
+      'warn',
+      `Duplicate login detected. Backing off ${Math.round(delay / 1000)}s…`
+    );
     instance
       ._destroyBot('duplicate login')
       .then(() => instance._reconnect.reconnectAfter(delay))
@@ -106,7 +117,11 @@ function onServerMessage(instance, jsonMsg) {
   if (state === BOT_STATES.CONNECTING && authPatterns.isAuthPrompt(msg)) {
     clearTimeout(instance._loginTimer);
     instance._setState(BOT_STATES.AUTHENTICATING);
-    instance._auth.authenticate(msg).catch((err) => botLog(instance.id, 'error', `Auth error: ${err.message}`));
+    instance._auth
+      .authenticate(msg)
+      .catch((err) =>
+        botLog(instance.id, 'error', `Auth error: ${err.message}`)
+      );
     return;
   }
 
@@ -124,13 +139,22 @@ function onServerMessage(instance, jsonMsg) {
 function onHealth(instance, bot) {
   const state = instance.state;
 
-  if (state === BOT_STATES.AUTHENTICATING && bot.health > 0 && instance._auth.loginSent) {
+  if (
+    state === BOT_STATES.AUTHENTICATING &&
+    bot.health > 0 &&
+    instance._auth.loginSent
+  ) {
     botLog(instance.id, 'info', 'Auth success via health event.');
     instance._auth.onSuccess();
     return;
   }
 
-  if (state !== BOT_STATES.PLAYING && state !== BOT_STATES.AFK && state !== BOT_STATES.COMBAT) return;
+  if (
+    state !== BOT_STATES.PLAYING &&
+    state !== BOT_STATES.AFK &&
+    state !== BOT_STATES.COMBAT
+  )
+    return;
   instance.emit('healthUpdate', { health: bot.health, food: bot.food });
 
   if (bot.health <= 0) {
@@ -138,7 +162,10 @@ function onHealth(instance, bot) {
     return;
   }
 
-  if (instance._lastHealthTick > 0 && bot.health < instance._lastHealthTick - DAMAGE_EPSILON) {
+  if (
+    instance._lastHealthTick > 0 &&
+    bot.health < instance._lastHealthTick - DAMAGE_EPSILON
+  ) {
     if (instance._sub?.combat) instance._sub.combat.onAttacked();
   }
   instance._lastHealthTick = bot.health;
@@ -163,7 +190,11 @@ function onDeath(instance, bot) {
   instance._setState(BOT_STATES.PLAYING);
 
   if (checkAlertCooldown(`${instance.id}:death`)) {
-    instance.emit('alert', 'death', `Bot died at ${formatPos(bot.entity?.position)}`);
+    instance.emit(
+      'alert',
+      'death',
+      `Bot died at ${formatPos(bot.entity?.position)}`
+    );
   }
 
   // FIX: Single respawn handler with explicit removal of any previous one.

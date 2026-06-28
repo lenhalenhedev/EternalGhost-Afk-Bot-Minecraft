@@ -22,14 +22,23 @@ function transitionToPlaying(instance) {
   clearTimeout(instance._loginTimer);
   instance._reconnect.resetAttempts(); // healthy connection – reset backoff counter
   instance._setState(BOT_STATES.PLAYING);
-  botLog(instance.id, 'info', `PLAYING. Settling ${SETTLE_BEFORE_AFK_MS / 1000}s before AFK\u2026`);
+  botLog(
+    instance.id,
+    'info',
+    `PLAYING. Settling ${SETTLE_BEFORE_AFK_MS / 1000}s before AFK\u2026`
+  );
 
-  instance._sub.startPlaying(instance._bot, (event, ...args) => instance.emit(event, ...args));
+  instance._sub.startPlaying(instance._bot, (event, ...args) =>
+    instance.emit(event, ...args)
+  );
 
   // Tracked so a stop()/disconnect during the settle window cancels it instead
   // of leaving a dangling timer that fires after teardown.
   clearTimeout(instance._settleTimer);
-  instance._settleTimer = setTimeout(() => transitionToAFK(instance), SETTLE_BEFORE_AFK_MS);
+  instance._settleTimer = setTimeout(
+    () => transitionToAFK(instance),
+    SETTLE_BEFORE_AFK_MS
+  );
 }
 
 /** Begin anti-AFK + combat scanning once settled (no-op if torn down). */
@@ -40,13 +49,19 @@ function transitionToAFK(instance) {
   clearTimeout(instance._settleTimer);
   instance._settleTimer = null;
 
-  if (instance._state === BOT_STATES.OFFLINE || instance._state === BOT_STATES.DISCONNECTED) return;
+  if (
+    instance._state === BOT_STATES.OFFLINE ||
+    instance._state === BOT_STATES.DISCONNECTED
+  )
+    return;
   if (!instance._bot) return;
 
   instance._setState(BOT_STATES.AFK);
   // startAFK is idempotent: it stops any previous antiAFK/combat before creating
   // new ones, so even a redundant call here cannot leak interval timers.
-  instance._sub.startAFK(instance._bot, (event, ...args) => handleCombatEvent(instance, event, ...args));
+  instance._sub.startAFK(instance._bot, (event, ...args) =>
+    handleCombatEvent(instance, event, ...args)
+  );
   botLog(instance.id, 'info', 'Entered AFK mode.');
   instance.emit('afkStarted');
 }
@@ -58,7 +73,8 @@ function handleCombatEvent(instance, event, ...args) {
     instance._sub.enterCombat();
     instance.emit('combatStart', ...args);
   } else if (event === 'combatEnd') {
-    if (instance._state === BOT_STATES.COMBAT) instance._setState(BOT_STATES.AFK);
+    if (instance._state === BOT_STATES.COMBAT)
+      instance._setState(BOT_STATES.AFK);
     instance._sub.exitCombat();
     instance.emit('combatEnd', ...args);
   } else {
@@ -66,4 +82,9 @@ function handleCombatEvent(instance, event, ...args) {
   }
 }
 
-module.exports = { transitionToPlaying, transitionToAFK, handleCombatEvent, SETTLE_BEFORE_AFK_MS };
+module.exports = {
+  transitionToPlaying,
+  transitionToAFK,
+  handleCombatEvent,
+  SETTLE_BEFORE_AFK_MS,
+};

@@ -56,14 +56,24 @@ test('validatePassword blocks injection vectors but allows empty', () => {
 });
 
 test('validateBotConfig aggregates all errors', () => {
-  const res = validateBotConfig({ host: '', port: '0', username: 'a', version: 'x', password: 'bad pw' });
+  const res = validateBotConfig({
+    host: '',
+    port: '0',
+    username: 'a',
+    version: 'x',
+    password: 'bad pw',
+  });
   assert.equal(res.valid, false);
   assert.equal(res.errors.length, 5);
 });
 
 test('validateBotConfig passes a fully valid config', () => {
   const res = validateBotConfig({
-    host: 'play.example.net', port: '25565', username: 'Steve', version: '1.20.1', password: '',
+    host: 'play.example.net',
+    port: '25565',
+    username: 'Steve',
+    version: '1.20.1',
+    password: '',
   });
   assert.equal(res.valid, true);
 });

@@ -34,7 +34,8 @@ function isSafe(bot, vec3, x, y, z) {
   if (head.boundingBox !== 'empty') return false;
 
   // No damaging blocks anywhere in the column.
-  if (isDanger(below.name) || isDanger(feet.name) || isDanger(head.name)) return false;
+  if (isDanger(below.name) || isDanger(feet.name) || isDanger(head.name))
+    return false;
 
   return true;
 }

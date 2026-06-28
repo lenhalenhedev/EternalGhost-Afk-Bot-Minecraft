@@ -9,14 +9,20 @@ test('pushBotLog keeps only the most recent N lines (ring buffer cap)', () => {
   const b = new LogBuffers({ botBufferSize: 3 });
   for (let i = 0; i < 5; i++) b.pushBotLog('bot', 'info', `m${i}`, 1000 + i);
   const logs = b.getBotLogs('bot', 50);
-  assert.deepEqual(logs.map((e) => e.msg), ['m2', 'm3', 'm4']);
+  assert.deepEqual(
+    logs.map((e) => e.msg),
+    ['m2', 'm3', 'm4']
+  );
 });
 
 test('getBotLogs respects maxLines and returns newest last', () => {
   const b = new LogBuffers();
   for (let i = 0; i < 10; i++) b.pushBotLog('bot', 'info', `m${i}`, 1000 + i);
   const logs = b.getBotLogs('bot', 3);
-  assert.deepEqual(logs.map((e) => e.msg), ['m7', 'm8', 'm9']);
+  assert.deepEqual(
+    logs.map((e) => e.msg),
+    ['m7', 'm8', 'm9']
+  );
 });
 
 test('getBotLogs filters by maxAgeMs', () => {
@@ -25,7 +31,10 @@ test('getBotLogs filters by maxAgeMs', () => {
   b.pushBotLog('bot', 'info', 'recent', 9_000);
   const now = 10_000;
   const logs = b.getBotLogs('bot', 50, 2_000, now); // only last 2s
-  assert.deepEqual(logs.map((e) => e.msg), ['recent']);
+  assert.deepEqual(
+    logs.map((e) => e.msg),
+    ['recent']
+  );
 });
 
 test('getBotLogs returns empty array for unknown bot', () => {
@@ -50,7 +59,10 @@ test('addToSummary caps retained entries at summaryMax', () => {
   b.addToSummary('warn', 'bot', 'b', 2);
   b.addToSummary('warn', 'bot', 'c', 3);
   const entries = b.drainSummary();
-  assert.deepEqual(entries.map((e) => e.message), ['b', 'c']);
+  assert.deepEqual(
+    entries.map((e) => e.message),
+    ['b', 'c']
+  );
 });
 
 test('checkAlertCooldown allows once then suppresses within the window', () => {

@@ -33,8 +33,11 @@ function intEnv(key, defaultValue) {
 function buildPoolConfig() {
   const connectionString = optionalEnv('DATABASE_URL');
   const sslEnabled =
-    boolEnv('DB_SSL') || /^(require|verify-ca|verify-full)$/i.test(optionalEnv('PGSSLMODE', ''));
-  const ssl = sslEnabled ? { rejectUnauthorized: boolEnv('DB_SSL_REJECT_UNAUTHORIZED', false) } : undefined;
+    boolEnv('DB_SSL') ||
+    /^(require|verify-ca|verify-full)$/i.test(optionalEnv('PGSSLMODE', ''));
+  const ssl = sslEnabled
+    ? { rejectUnauthorized: boolEnv('DB_SSL_REJECT_UNAUTHORIZED', false) }
+    : undefined;
 
   const poolTuning = {
     max: intEnv('DB_POOL_MAX', 10),
@@ -67,8 +70,12 @@ const pool = new Pool(buildPoolConfig());
 let _acquireCount = 0;
 let _releaseCount = 0;
 
-pool.on('acquire', () => { _acquireCount++; });
-pool.on('release', () => { _releaseCount++; });
+pool.on('acquire', () => {
+  _acquireCount++;
+});
+pool.on('release', () => {
+  _releaseCount++;
+});
 
 pool.on('error', (err) => {
   try {
@@ -104,7 +111,11 @@ async function withTransaction(fn) {
     return result;
   } catch (err) {
     if (!committed) {
-      try { await client.query('ROLLBACK'); } catch (_) { /* ignore rollback errors */ }
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {
+        /* ignore rollback errors */
+      }
     }
     throw err;
   } finally {
@@ -138,4 +149,11 @@ function getPoolStats() {
   };
 }
 
-module.exports = { pool, query, withTransaction, assertConnection, close, getPoolStats };
+module.exports = {
+  pool,
+  query,
+  withTransaction,
+  assertConnection,
+  close,
+  getPoolStats,
+};

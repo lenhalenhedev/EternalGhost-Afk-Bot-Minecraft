@@ -21,19 +21,23 @@ const ALLOWED_DIR = path.resolve(__dirname, '..');
 
 // Tìm đường dẫn tuyệt đối của file đích
 let TARGET_FILE = path.resolve(
-  fileArg || process.env.DATA_FILE || './data/bots.json',
+  fileArg || process.env.DATA_FILE || './data/bots.json'
 );
 
 // Nếu người dùng chủ động truyền tham số, phải kiểm tra xem có đi lùi ra ngoài thư mục dự án không
 if (fileArg && !TARGET_FILE.startsWith(ALLOWED_DIR)) {
-  console.error('[migrate] FAILED: Địt mẹ mày định đi lùi thư mục để hack hệ thống à? Cút!');
+  console.error(
+    '[migrate] FAILED: Địt mẹ mày định đi lùi thư mục để hack hệ thống à? Cút!'
+  );
   process.exit(1);
 }
 
 const DATA_FILE = TARGET_FILE;
 // ---------------------------------
 
-function log(...m) { console.log('[migrate]', ...m); }
+function log(...m) {
+  console.log('[migrate]', ...m);
+}
 
 function readJson() {
   if (!fs.existsSync(DATA_FILE)) {
@@ -53,9 +57,15 @@ function readJson() {
   };
 }
 
-function antiAfkOf(bot) { return { ...DEFAULT_ANTIAFK, ...(bot.antiAfk || {}) }; }
-function autoEatOf(bot) { return { ...DEFAULT_AUTOEAT, ...(bot.autoEat || {}) }; }
-function combatOf(bot)  { return { ...DEFAULT_COMBAT,  ...(bot.combat  || {}) }; }
+function antiAfkOf(bot) {
+  return { ...DEFAULT_ANTIAFK, ...(bot.antiAfk || {}) };
+}
+function autoEatOf(bot) {
+  return { ...DEFAULT_AUTOEAT, ...(bot.autoEat || {}) };
+}
+function combatOf(bot) {
+  return { ...DEFAULT_COMBAT, ...(bot.combat || {}) };
+}
 
 async function insertBot(client, bot) {
   const now = new Date().toISOString();
@@ -69,14 +79,19 @@ async function insertBot(client, bot) {
        auto_reconnect=$7, was_running=$8, hidden=$9, created_by=$10,
        created_at=$11, updated_at=$12`,
     [
-      bot.id, bot.host, parseInt(bot.port, 10), bot.username,
-      bot.encryptedPassword || '', bot.version,
+      bot.id,
+      bot.host,
+      parseInt(bot.port, 10),
+      bot.username,
+      bot.encryptedPassword || '',
+      bot.version,
       bot.autoReconnect !== undefined ? bot.autoReconnect : true,
       bot.wasRunning !== undefined ? bot.wasRunning : false,
       bot.hidden !== undefined ? bot.hidden : false,
       bot.createdBy || null,
-      bot.createdAt || now, bot.updatedAt || now,
-    ],
+      bot.createdAt || now,
+      bot.updatedAt || now,
+    ]
   );
 
   const a = antiAfkOf(bot);
@@ -89,8 +104,18 @@ async function insertBot(client, bot) {
        enabled=$2, min_radius=$3, max_radius=$4, min_interval=$5,
        max_interval=$6, max_retries=$7, move_timeout=$8, stuck_timeout=$9,
        rotation_interval=$10`,
-    [bot.id, a.enabled, a.minRadius, a.maxRadius, a.minInterval, a.maxInterval,
-     a.maxRetries, a.moveTimeout, a.stuckTimeout, a.rotationInterval],
+    [
+      bot.id,
+      a.enabled,
+      a.minRadius,
+      a.maxRadius,
+      a.minInterval,
+      a.maxInterval,
+      a.maxRetries,
+      a.moveTimeout,
+      a.stuckTimeout,
+      a.rotationInterval,
+    ]
   );
 
   const e = autoEatOf(bot);
@@ -100,7 +125,7 @@ async function insertBot(client, bot) {
      VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (bot_id) DO UPDATE SET
        enabled=$2, eat_threshold=$3, eat_cooldown=$4, check_interval=$5`,
-    [bot.id, e.enabled, e.eatThreshold, e.eatCooldown, e.checkInterval],
+    [bot.id, e.enabled, e.eatThreshold, e.eatCooldown, e.checkInterval]
   );
 
   const c = combatOf(bot);
@@ -113,14 +138,23 @@ async function insertBot(client, bot) {
        enabled=$2, scan_range=$3, engage_range=$4, max_combat_duration=$5,
        retreat_hp_pct=$6, scan_interval=$7, attack_interval=$8,
        invisible_timeout=$9`,
-    [bot.id, c.enabled, c.scanRange, c.engageRange, c.maxCombatDuration,
-     c.retreatHpPct, c.scanInterval, c.attackInterval, c.invisibleTimeout],
+    [
+      bot.id,
+      c.enabled,
+      c.scanRange,
+      c.engageRange,
+      c.maxCombatDuration,
+      c.retreatHpPct,
+      c.scanInterval,
+      c.attackInterval,
+      c.invisibleTimeout,
+    ]
   );
 
   await client.query(
     `INSERT INTO bot_activity_log (bot_id, action, actor, meta)
      VALUES ($1, 'migrated', $2, $3::jsonb)`,
-    [bot.id, bot.createdBy || null, JSON.stringify({ source: 'bots.json' })],
+    [bot.id, bot.createdBy || null, JSON.stringify({ source: 'bots.json' })]
   );
 }
 
@@ -135,7 +169,7 @@ async function insertSelections(client, userSelections, validBotIds) {
       `INSERT INTO user_selections (user_id, bot_id, updated_at)
        VALUES ($1, $2, now())
        ON CONFLICT (user_id) DO UPDATE SET bot_id = $2, updated_at = now()`,
-      [userId, botId],
+      [userId, botId]
     );
     count++;
   }
@@ -150,10 +184,14 @@ async function main() {
   const botList = Object.values(bots);
   const validBotIds = new Set(botList.map((b) => b.id));
 
-  log(`Found ${botList.length} bot(s) and ${Object.keys(userSelections).length} selection(s).`);
+  log(
+    `Found ${botList.length} bot(s) and ${Object.keys(userSelections).length} selection(s).`
+  );
 
   if (DRY_RUN) {
-    botList.forEach((b) => log(`  would migrate bot ${b.id} (${b.username}@${b.host}:${b.port})`));
+    botList.forEach((b) =>
+      log(`  would migrate bot ${b.id} (${b.username}@${b.host}:${b.port})`)
+    );
     log('Dry run complete – no changes written.');
     await db.close();
     return;
@@ -173,7 +211,9 @@ async function main() {
   });
 
   log(`Done. Migrated ${migrated} bot(s).`);
-  log('Tip: keep a backup of bots.json until you have verified the data in Postgres.');
+  log(
+    'Tip: keep a backup of bots.json until you have verified the data in Postgres.'
+  );
   await db.close();
 }
 

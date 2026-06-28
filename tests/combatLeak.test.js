@@ -45,7 +45,7 @@ test('stop() leaves zero live timers across many start/combat/stop cycles', () =
       assert.strictEqual(
         tt.liveCount(),
         baseline,
-        `live timers leaked after stop() on cycle ${i} (got ${tt.liveCount()})`,
+        `live timers leaked after stop() on cycle ${i} (got ${tt.liveCount()})`
       );
     }
   } finally {
@@ -62,7 +62,11 @@ test('startScanning() is idempotent (no duplicate scanner interval)', () => {
     combat.startScanning();
     combat.startScanning();
     combat.startScanning();
-    assert.strictEqual(tt.liveCount(), before + 1, 'scanner interval was duplicated');
+    assert.strictEqual(
+      tt.liveCount(),
+      before + 1,
+      'scanner interval was duplicated'
+    );
     combat.stop();
     assert.strictEqual(tt.liveCount(), before);
   } finally {
@@ -82,7 +86,11 @@ test('_startCombat() cannot stack a second attack loop (re-entrancy guard)', () 
     const afterFirst = tt.liveCount();
     combat._startCombat(zombie); // ignored – already active
     combat._startCombat(zombie);
-    assert.strictEqual(tt.liveCount(), afterFirst, 'attack loop / timeout were duplicated');
+    assert.strictEqual(
+      tt.liveCount(),
+      afterFirst,
+      'attack loop / timeout were duplicated'
+    );
     combat.stop();
     assert.strictEqual(tt.liveCount(), before);
   } finally {
@@ -114,11 +122,15 @@ test('_fleeFrom is throttled under a burst of onAttacked calls (CPU spike fix)',
     const issuedDuringBurst = bot._setGoalCalls.length - afterRetreat;
     assert.ok(
       issuedDuringBurst <= 1,
-      `flee re-path not throttled: ${issuedDuringBurst} setGoal calls during a 500-hit burst`,
+      `flee re-path not throttled: ${issuedDuringBurst} setGoal calls during a 500-hit burst`
     );
 
     combat.stop();
-    assert.strictEqual(tt.liveCount(), 0, 'timers leaked after retreat + burst');
+    assert.strictEqual(
+      tt.liveCount(),
+      0,
+      'timers leaked after retreat + burst'
+    );
   } finally {
     tt.restore();
   }
@@ -137,8 +149,16 @@ test('_tick() is safe and self-terminating when the bot entity disappears (death
     // end combat (clearing its interval) instead of spinning forever.
     bot.entity = null;
     assert.doesNotThrow(() => combat._tick());
-    assert.strictEqual(combat.isActive, false, 'combat did not end after entity loss');
-    assert.strictEqual(tt.liveCount(), 0, 'attack loop kept running after entity loss');
+    assert.strictEqual(
+      combat.isActive,
+      false,
+      'combat did not end after entity loss'
+    );
+    assert.strictEqual(
+      tt.liveCount(),
+      0,
+      'attack loop kept running after entity loss'
+    );
   } finally {
     tt.restore();
   }
@@ -172,7 +192,11 @@ test('stop() cancels the active pathfinder goal', () => {
     combat._tick(); // issues a GoalFollow
     combat.stop();
     const last = bot._setGoalCalls[bot._setGoalCalls.length - 1];
-    assert.strictEqual(last, null, 'stop() did not call pathfinder.setGoal(null)');
+    assert.strictEqual(
+      last,
+      null,
+      'stop() did not call pathfinder.setGoal(null)'
+    );
   } finally {
     tt.restore();
   }
@@ -195,7 +219,11 @@ test('high-frequency death/retreat cycling does not accumulate timers', () => {
       for (let j = 0; j < 20; j++) combat.onAttacked(); // damage flood
     }
     // Only the scanner interval should remain after all the churn.
-    assert.strictEqual(tt.liveCount(), 1, `expected only scanner interval, got ${tt.liveCount()}`);
+    assert.strictEqual(
+      tt.liveCount(),
+      1,
+      `expected only scanner interval, got ${tt.liveCount()}`
+    );
     combat.stop();
     assert.strictEqual(tt.liveCount(), 0);
   } finally {

@@ -15,7 +15,9 @@ function isRunningState(state) {
  */
 function attachInstanceEvents(instance, notifier) {
   instance.on('stateChange', (_old, newState) => {
-    Persistence.updateBotState(instance.id, { wasRunning: isRunningState(newState) });
+    Persistence.updateBotState(instance.id, {
+      wasRunning: isRunningState(newState),
+    });
   });
 
   instance.on('alert', (type, message) => {
@@ -29,14 +31,24 @@ function attachInstanceEvents(instance, notifier) {
 
   instance.on('noFood', () => {
     if (checkAlertCooldown(`${instance.id}:noFood`)) {
-      notifier.sendAlert(instance, 'noFood', 'Bot has run out of food! Auto-eat disabled.').catch(() => {});
+      notifier
+        .sendAlert(
+          instance,
+          'noFood',
+          'Bot has run out of food! Auto-eat disabled.'
+        )
+        .catch(() => {});
     }
   });
 
   instance.on('inventoryFull', () => {
     if (checkAlertCooldown(`${instance.id}:inventoryFull`)) {
       notifier
-        .sendAlert(instance, 'inventoryFull', 'Bot inventory is full and has no droppable items.')
+        .sendAlert(
+          instance,
+          'inventoryFull',
+          'Bot inventory is full and has no droppable items.'
+        )
         .catch(() => {});
     }
   });

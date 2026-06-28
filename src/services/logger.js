@@ -1,6 +1,6 @@
 'use strict';
-const path   = require('path');
-const fs     = require('fs');
+const path = require('path');
+const fs = require('fs');
 const winston = require('winston');
 require('winston-daily-rotate-file');
 const config = require('../config');
@@ -34,25 +34,25 @@ const consoleFormat = combine(
 const transports = [
   new winston.transports.Console({ format: consoleFormat }),
   new winston.transports.DailyRotateFile({
-    filename:       path.join(LOG_DIR, 'combined-%DATE%.log'),
-    datePattern:    'YYYY-MM-DD',
-    maxFiles:       '14d',
-    maxSize:        '50m',
-    format:         fileFormat,
-    zippedArchive:  true,
+    filename: path.join(LOG_DIR, 'combined-%DATE%.log'),
+    datePattern: 'YYYY-MM-DD',
+    maxFiles: '14d',
+    maxSize: '50m',
+    format: fileFormat,
+    zippedArchive: true,
   }),
   new winston.transports.DailyRotateFile({
-    level:          'error',
-    filename:       path.join(LOG_DIR, 'error-%DATE%.log'),
-    datePattern:    'YYYY-MM-DD',
-    maxFiles:       '30d',
-    format:         fileFormat,
-    zippedArchive:  true,
+    level: 'error',
+    filename: path.join(LOG_DIR, 'error-%DATE%.log'),
+    datePattern: 'YYYY-MM-DD',
+    maxFiles: '30d',
+    format: fileFormat,
+    zippedArchive: true,
   }),
 ];
 
 const logger = winston.createLogger({
-  level:       config.storage.logLevel || 'info',
+  level: config.storage.logLevel || 'info',
   transports,
   exitOnError: false,
 });

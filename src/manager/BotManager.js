@@ -49,12 +49,17 @@ class BotManager {
 
     const interval = Math.max(
       SUMMARY_INTERVAL_BOUNDS.min,
-      Math.min(SUMMARY_INTERVAL_BOUNDS.max, config.limits.logSummaryIntervalMin || SUMMARY_INTERVAL_MIN),
+      Math.min(
+        SUMMARY_INTERVAL_BOUNDS.max,
+        config.limits.logSummaryIntervalMin || SUMMARY_INTERVAL_MIN
+      )
     );
     this._cronTask = cron.schedule(`*/${interval} * * * *`, () => {
       this._notifier.sendLogSummary(flushSummary()).catch(() => {});
     });
-    logger.info(`[BotManager] Log summary scheduled every ${interval} minutes.`);
+    logger.info(
+      `[BotManager] Log summary scheduled every ${interval} minutes.`
+    );
   }
 
   /** Load persisted bots and restart those that were running. */
@@ -62,17 +67,26 @@ class BotManager {
     await Persistence.load();
     if (config.encryption.oldKey) {
       const rotated = Persistence.rotateKeys();
-      if (rotated > 0) logger.info(`[BotManager] Key rotation: re-encrypted ${rotated} password(s).`);
+      if (rotated > 0)
+        logger.info(
+          `[BotManager] Key rotation: re-encrypted ${rotated} password(s).`
+        );
     }
     const records = Persistence.getAllBots();
     logger.info(`[BotManager] Loaded ${records.length} bot record(s).`);
     for (const record of records) {
       const instance = this._register(record);
       if (record.wasRunning) {
-        logger.info(`[BotManager] Auto-starting bot ${record.id} (wasRunning=true)`);
-        instance.start().catch((err) =>
-          logger.error(`[BotManager] Auto-start failed for ${record.id}: ${err.message}`),
+        logger.info(
+          `[BotManager] Auto-starting bot ${record.id} (wasRunning=true)`
         );
+        instance
+          .start()
+          .catch((err) =>
+            logger.error(
+              `[BotManager] Auto-start failed for ${record.id}: ${err.message}`
+            )
+          );
       }
     }
   }
@@ -81,19 +95,30 @@ class BotManager {
   async createBot(opts, createdBy) {
     const record = buildNewRecord(opts, createdBy);
     if (Persistence.findBot(record.host, record.port, record.username)) {
-      throw new Error(`A bot for ${record.username}@${record.host}:${record.port} already exists.`);
+      throw new Error(
+        `A bot for ${record.username}@${record.host}:${record.port} already exists.`
+      );
     }
     if (this._bots.size >= config.limits.maxBots) {
       throw new Error(`Maximum bot limit (${config.limits.maxBots}) reached.`);
     }
     Persistence.saveBot(record);
     Persistence.logActivity(record.id, 'created', createdBy, {
-      username: record.username, host: record.host, port: record.port, version: record.version,
+      username: record.username,
+      host: record.host,
+      port: record.port,
+      version: record.version,
     });
     this._register(record);
-    logger.info(`[BotManager] Bot created: ${record.id} (${record.username}@${record.host}:${record.port})`);
+    logger.info(
+      `[BotManager] Bot created: ${record.id} (${record.username}@${record.host}:${record.port})`
+    );
     this._auditLog('Bot created', createdBy, {
-      id: record.id, username: record.username, host: record.host, port: record.port, version: record.version,
+      id: record.id,
+      username: record.username,
+      host: record.host,
+      port: record.port,
+      version: record.version,
     });
     return { id: record.id, record };
   }
@@ -137,9 +162,14 @@ class BotManager {
     const allowed = buildEditPatch(instance.record, patch);
     Object.assign(instance.record, allowed);
     Persistence.saveBot(instance.record);
-    Persistence.logActivity(id, 'edited', editedBy, { changes: Object.keys(allowed) });
+    Persistence.logActivity(id, 'edited', editedBy, {
+      changes: Object.keys(allowed),
+    });
     logger.info(`[BotManager] Bot edited: ${id} by ${editedBy}`);
-    this._auditLog('Bot edited', editedBy, { id, changes: Object.keys(allowed) });
+    this._auditLog('Bot edited', editedBy, {
+      id,
+      changes: Object.keys(allowed),
+    });
   }
 
   async chatBot(id, message) {
@@ -204,7 +234,9 @@ class BotManager {
       this._cronTask = null;
     }
 
-    await Promise.all([...this._bots.values()].map((b) => b.stop(true).catch(() => {})));
+    await Promise.all(
+      [...this._bots.values()].map((b) => b.stop(true).catch(() => {}))
+    );
     await Persistence.flush();
     logger.info('[BotManager] Shutdown complete.');
   }

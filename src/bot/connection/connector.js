@@ -19,7 +19,7 @@ function decryptPassword(record) {
   const { plaintext } = decrypt(
     record.encryptedPassword,
     config.encryption.key,
-    config.encryption.oldKey,
+    config.encryption.oldKey
   );
   return plaintext;
 }

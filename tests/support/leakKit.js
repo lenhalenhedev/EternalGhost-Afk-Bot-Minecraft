@@ -58,7 +58,7 @@ function installTimerTracker() {
         if (typeof fn === 'function') fn(...inner);
       },
       ms,
-      ...args,
+      ...args
     );
     if (handle && typeof handle.unref === 'function') handle.unref();
     live.add(handle);

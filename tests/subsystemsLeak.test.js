@@ -4,7 +4,11 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
 
-const { projectRoot, installTimerTracker, stubResolved } = require('./support/leakKit');
+const {
+  projectRoot,
+  installTimerTracker,
+  stubResolved,
+} = require('./support/leakKit');
 
 /**
  * The core leak fix lives in Subsystems.startAFK / startPlaying: they must stop
@@ -65,10 +69,18 @@ test('repeated startAFK across respawns does not accumulate interval timers', ()
     for (let i = 0; i < 100; i++) {
       sub.startAFK(fakeBot, emit); // simulate a respawn -> AFK each loop
       // One AntiAFK interval + one Combat interval == exactly 2, never growing.
-      assert.strictEqual(tt.liveCount(), 2, `timers accumulated on respawn ${i} (got ${tt.liveCount()})`);
+      assert.strictEqual(
+        tt.liveCount(),
+        2,
+        `timers accumulated on respawn ${i} (got ${tt.liveCount()})`
+      );
     }
     sub.stopAll();
-    assert.strictEqual(tt.liveCount(), 0, 'stopAll() failed to release subsystem timers');
+    assert.strictEqual(
+      tt.liveCount(),
+      0,
+      'stopAll() failed to release subsystem timers'
+    );
   } finally {
     tt.restore();
   }
@@ -81,7 +93,11 @@ test('two startAFK calls with no intervening stop (settle-timer race) stay bound
     // This is the exact double-call the death-during-settle bug produced.
     sub.startAFK(fakeBot, emit);
     sub.startAFK(fakeBot, emit);
-    assert.strictEqual(tt.liveCount(), 2, 'a redundant startAFK orphaned the previous timers');
+    assert.strictEqual(
+      tt.liveCount(),
+      2,
+      'a redundant startAFK orphaned the previous timers'
+    );
     sub.stopAll();
     assert.strictEqual(tt.liveCount(), 0);
   } finally {
@@ -95,7 +111,11 @@ test('repeated startPlaying does not accumulate auto-eat timers', () => {
     const sub = new Subsystems('respawn-3');
     for (let i = 0; i < 100; i++) {
       sub.startPlaying(fakeBot, emit);
-      assert.strictEqual(tt.liveCount(), 1, `auto-eat timer leaked on cycle ${i}`);
+      assert.strictEqual(
+        tt.liveCount(),
+        1,
+        `auto-eat timer leaked on cycle ${i}`
+      );
     }
     sub.stopAll();
     assert.strictEqual(tt.liveCount(), 0);
@@ -114,10 +134,18 @@ test('full PLAYING -> AFK lifecycle churn returns to zero timers', () => {
       sub.enterCombat(); // mob appears
       sub.exitCombat(); // combat ends
       // playing(autoEat)=1 + antiAFK=1 + combat=1 == 3, stable across the loop.
-      assert.strictEqual(tt.liveCount(), 3, `timer drift detected on iteration ${i}: ${tt.liveCount()}`);
+      assert.strictEqual(
+        tt.liveCount(),
+        3,
+        `timer drift detected on iteration ${i}: ${tt.liveCount()}`
+      );
     }
     sub.stopAll();
-    assert.strictEqual(tt.liveCount(), 0, 'subsystem timers survived stopAll()');
+    assert.strictEqual(
+      tt.liveCount(),
+      0,
+      'subsystem timers survived stopAll()'
+    );
   } finally {
     tt.restore();
   }

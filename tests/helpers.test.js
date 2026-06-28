@@ -3,8 +3,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  clamp, randInt, randFloat, formatUptime, formatMB, formatPos,
-  withTimeout, getReconnectDelay, reconnectLimitReached, sleep,
+  clamp,
+  randInt,
+  randFloat,
+  formatUptime,
+  formatMB,
+  formatPos,
+  withTimeout,
+  getReconnectDelay,
+  reconnectLimitReached,
+  sleep,
 } = require('../src/utils/helpers');
 
 test('clamp bounds values', () => {
@@ -41,7 +49,10 @@ test('formatMB and formatPos render values', () => {
 
 test('withTimeout resolves fast promises and rejects slow ones', async () => {
   assert.equal(await withTimeout(Promise.resolve('ok'), 50, 'fast'), 'ok');
-  await assert.rejects(() => withTimeout(sleep(50), 5, 'slow'), /slow timed out/);
+  await assert.rejects(
+    () => withTimeout(sleep(50), 5, 'slow'),
+    /slow timed out/
+  );
 });
 
 test('getReconnectDelay uses exponential schedule and clamps', () => {

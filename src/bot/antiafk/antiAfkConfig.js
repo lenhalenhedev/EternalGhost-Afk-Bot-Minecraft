@@ -17,7 +17,14 @@ const ANTI_AFK = Object.freeze({
 });
 
 /** Danger block names (fragment match). */
-const DANGER_NAMES = ['lava', 'fire', 'magma_block', 'cactus', 'sweet_berry_bush', 'wither_rose'];
+const DANGER_NAMES = [
+  'lava',
+  'fire',
+  'magma_block',
+  'cactus',
+  'sweet_berry_bush',
+  'wither_rose',
+];
 
 /** True if a block name refers to a damaging block. */
 function isDanger(name) {

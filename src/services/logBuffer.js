@@ -31,7 +31,10 @@ class LogBuffers {
     // FIX: Set up periodic pruning of expired cooldown entries.
     // Without this, the cooldowns Map grows indefinitely as new unique keys
     // are added (e.g., botId:death, botId:disconnect for every bot over time).
-    this._pruneTimer = setInterval(() => this.pruneCooldowns(), COOLDOWN_PRUNE_INTERVAL);
+    this._pruneTimer = setInterval(
+      () => this.pruneCooldowns(),
+      COOLDOWN_PRUNE_INTERVAL
+    );
     // Ensure the timer doesn't prevent process exit
     if (this._pruneTimer.unref) this._pruneTimer.unref();
   }
@@ -122,4 +125,9 @@ class LogBuffers {
   }
 }
 
-module.exports = { LogBuffers, BOT_BUFFER_SIZE, SUMMARY_MAX, ALERT_COOLDOWN_MS };
+module.exports = {
+  LogBuffers,
+  BOT_BUFFER_SIZE,
+  SUMMARY_MAX,
+  ALERT_COOLDOWN_MS,
+};

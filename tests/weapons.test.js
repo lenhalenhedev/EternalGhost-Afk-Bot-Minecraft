@@ -2,7 +2,12 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { weaponScore, bestWeaponSlot, equipBestWeapon, WEAPON_PRIORITY } = require('../src/bot/combat/weapons');
+const {
+  weaponScore,
+  bestWeaponSlot,
+  equipBestWeapon,
+  WEAPON_PRIORITY,
+} = require('../src/bot/combat/weapons');
 
 test('weaponScore ranks weapons by priority', () => {
   assert.equal(weaponScore({ name: 'diamond_sword' }), WEAPON_PRIORITY.sword);
@@ -24,7 +29,10 @@ test('bestWeaponSlot scans only the hotbar (36-44) and picks the best', () => {
   slots[40] = { name: 'diamond_sword' };
   slots[10] = { name: 'netherite_sword' }; // outside hotbar, must be ignored
   const bot = { inventory: { slots } };
-  assert.deepEqual(bestWeaponSlot(bot), { slot: 40, score: WEAPON_PRIORITY.sword });
+  assert.deepEqual(bestWeaponSlot(bot), {
+    slot: 40,
+    score: WEAPON_PRIORITY.sword,
+  });
 });
 
 test('bestWeaponSlot returns -1 when no weapon present', () => {
@@ -36,7 +44,12 @@ test('equipBestWeapon selects the hotbar index for a real weapon', () => {
   const slots = [];
   slots[38] = { name: 'iron_sword' };
   let selected = null;
-  const bot = { inventory: { slots }, setQuickBarSlot: (i) => { selected = i; } };
+  const bot = {
+    inventory: { slots },
+    setQuickBarSlot: (i) => {
+      selected = i;
+    },
+  };
   equipBestWeapon(bot);
   assert.equal(selected, 2); // slot 38 -> hotbar index 2
 });
@@ -45,7 +58,12 @@ test('equipBestWeapon does not switch when only fists are available', () => {
   const slots = [];
   slots[36] = { name: 'cobblestone' };
   let called = false;
-  const bot = { inventory: { slots }, setQuickBarSlot: () => { called = true; } };
+  const bot = {
+    inventory: { slots },
+    setQuickBarSlot: () => {
+      called = true;
+    },
+  };
   equipBestWeapon(bot);
   assert.equal(called, false);
 });

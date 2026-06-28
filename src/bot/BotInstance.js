@@ -6,7 +6,10 @@ const Queue = require('../manager/Queue');
 const { AuthFlow } = require('./auth/authFlow');
 const ReconnectPolicy = require('./connection/reconnectPolicy');
 const { bindBotEvents } = require('./connection/botEventBinder');
-const { decryptPassword, createMineflayerBot } = require('./connection/connector');
+const {
+  decryptPassword,
+  createMineflayerBot,
+} = require('./connection/connector');
 const { toSnapshot } = require('./botSnapshot');
 const { transitionToPlaying, transitionToAFK } = require('./phaseController');
 const { logger, botLog } = require('../services/logger');
@@ -40,7 +43,12 @@ class BotInstance extends EventEmitter {
     this._bot = null;
     this._password = '';
     this._sub = new Subsystems(this.id);
-    this._queue = new Queue(this.id, config.limits.queueSize, config.limits.queueTimeout, logger);
+    this._queue = new Queue(
+      this.id,
+      config.limits.queueSize,
+      config.limits.queueTimeout,
+      logger
+    );
     this._auth = new AuthFlow(this);
     this._reconnect = new ReconnectPolicy(this);
     this._loginTimer = null;
@@ -52,15 +60,33 @@ class BotInstance extends EventEmitter {
   }
 
   // ─── Public read API ───
-  get state() { return this._state; }
-  get bot() { return this._bot; }
-  get password() { return this._password; }
-  get reconnectAttempts() { return this._reconnect.currentAttempts; }
-  get uptime() { return this._startTime ? Date.now() - this._startTime : 0; }
-  get position() { return this._bot?.entity?.position ?? null; }
-  get health() { return this._bot?.health ?? 0; }
-  get food() { return this._bot?.food ?? 0; }
-  get ping() { return this._bot?._client?.latency ?? 0; }
+  get state() {
+    return this._state;
+  }
+  get bot() {
+    return this._bot;
+  }
+  get password() {
+    return this._password;
+  }
+  get reconnectAttempts() {
+    return this._reconnect.currentAttempts;
+  }
+  get uptime() {
+    return this._startTime ? Date.now() - this._startTime : 0;
+  }
+  get position() {
+    return this._bot?.entity?.position ?? null;
+  }
+  get health() {
+    return this._bot?.health ?? 0;
+  }
+  get food() {
+    return this._bot?.food ?? 0;
+  }
+  get ping() {
+    return this._bot?._client?.latency ?? 0;
+  }
 
   // ─── Public commands ───
   async start() {
@@ -83,7 +109,8 @@ class BotInstance extends EventEmitter {
 
   async chat(message) {
     if (!this._bot) throw new Error('Bot is not connected');
-    if (!ALIVE_STATES.has(this._state)) throw new Error(`Bot is in state ${this._state}`);
+    if (!ALIVE_STATES.has(this._state))
+      throw new Error(`Bot is in state ${this._state}`);
     return this._queue.enqueue(async () => {
       this._bot.chat(message);
       await sleep(CHAT_THROTTLE_MS);
@@ -111,7 +138,11 @@ class BotInstance extends EventEmitter {
     this._lastHealthTick = 0;
     this._respawnHandler = null;
     this._setState(BOT_STATES.CONNECTING);
-    botLog(this.id, 'info', `Connecting to ${this.record.host}:${this.record.port} as ${this.record.username}`);
+    botLog(
+      this.id,
+      'info',
+      `Connecting to ${this.record.host}:${this.record.port} as ${this.record.username}`
+    );
     if (!this._decryptPassword()) return;
 
     let bot;
@@ -140,8 +171,12 @@ class BotInstance extends EventEmitter {
   }
 
   // ─── State transitions ───
-  _transitionToPlaying() { transitionToPlaying(this); }
-  _transitionToAFK() { transitionToAFK(this); }
+  _transitionToPlaying() {
+    transitionToPlaying(this);
+  }
+  _transitionToAFK() {
+    transitionToAFK(this);
+  }
 
   // ─── Internal helpers ───
   _setState(newState) {

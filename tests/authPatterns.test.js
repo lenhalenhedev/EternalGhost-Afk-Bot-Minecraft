@@ -3,11 +3,17 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  isAuthPrompt, isAuthSuccess, isAuthHardFail, isDuplicateLogin,
+  isAuthPrompt,
+  isAuthSuccess,
+  isAuthHardFail,
+  isDuplicateLogin,
 } = require('../src/bot/auth/authPatterns');
 
 test('detects English auth prompts', () => {
-  assert.equal(isAuthPrompt('Please register using /register <password>'), true);
+  assert.equal(
+    isAuthPrompt('Please register using /register <password>'),
+    true
+  );
   assert.equal(isAuthPrompt('You need to login to play'), true);
   assert.equal(isAuthPrompt('Welcome to the server, enjoy!'), false);
 });
@@ -19,7 +25,10 @@ test('detects Vietnamese auth prompts', () => {
 
 test('detects auth success across languages', () => {
   assert.equal(isAuthSuccess('You are now logged in'), true);
-  assert.equal(isAuthSuccess('\u0110\u0103ng nh\u1eadp th\u00e0nh c\u00f4ng'), true);
+  assert.equal(
+    isAuthSuccess('\u0110\u0103ng nh\u1eadp th\u00e0nh c\u00f4ng'),
+    true
+  );
   assert.equal(isAuthSuccess('je bent succesvol ingelogd'), true);
   assert.equal(isAuthSuccess('random chat message'), false);
 });
@@ -31,7 +40,10 @@ test('detects hard failures', () => {
 });
 
 test('detects duplicate logins', () => {
-  assert.equal(isDuplicateLogin('You are already logged in from another location'), true);
+  assert.equal(
+    isDuplicateLogin('You are already logged in from another location'),
+    true
+  );
   assert.equal(isDuplicateLogin('duplicate login detected'), true);
   assert.equal(isDuplicateLogin('all good'), false);
 });

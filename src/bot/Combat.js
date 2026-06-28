@@ -110,7 +110,7 @@ class Combat {
     botLog(
       this.botId,
       'info',
-      `Combat started vs ${this._mobName(entity)} (dist: ${this.bot.entity.position.distanceTo(entity.position).toFixed(1)})`,
+      `Combat started vs ${this._mobName(entity)} (dist: ${this.bot.entity.position.distanceTo(entity.position).toFixed(1)})`
     );
     this._emit('combatStart', entity);
     this._attackLoop = setInterval(() => this._tick(), COMBAT.ATTACK_INTERVAL);
@@ -128,7 +128,11 @@ class Combat {
 
     if (!bot.entity) return this._endCombat('bot entity gone');
 
-    if (!bot.entities[entity.id] || !entity.position || entity.metadata?.[0]?.value === 1) {
+    if (
+      !bot.entities[entity.id] ||
+      !entity.position ||
+      entity.metadata?.[0]?.value === 1
+    ) {
       return this._endCombat('target dead or gone');
     }
 
@@ -143,7 +147,9 @@ class Combat {
       this._invisibleSince.delete(entity.id);
     }
 
-    const maxHp = bot.player?.entity?.attributes?.['minecraft:generic.max_health']?.value || 20;
+    const maxHp =
+      bot.player?.entity?.attributes?.['minecraft:generic.max_health']?.value ||
+      20;
     if (bot.health / maxHp < COMBAT.RETREAT_HP_PCT) {
       return this._retreat(entity);
     }
@@ -167,7 +173,8 @@ class Combat {
 
   _retreat(entity) {
     const flying = this._isFlying(entity);
-    this._retreatUntil = Date.now() + (flying ? FLYING_RETREAT_COOLDOWN_MS : RETREAT_COOLDOWN_MS);
+    this._retreatUntil =
+      Date.now() + (flying ? FLYING_RETREAT_COOLDOWN_MS : RETREAT_COOLDOWN_MS);
     this._emit('retreat', { entity, flying });
     this._endCombat('low HP retreat', { fleeFrom: entity });
   }
@@ -203,7 +210,10 @@ class Combat {
       away.y = 0;
       if (away.norm() < 1e-3) away.x = 1;
       const dest = me.plus(away.normalize().scaled(RETREAT_DISTANCE));
-      bot.pathfinder.setGoal(new goals.GoalNear(dest.x, me.y, dest.z, 1), false);
+      bot.pathfinder.setGoal(
+        new goals.GoalNear(dest.x, me.y, dest.z, 1),
+        false
+      );
       this._goalActive = true;
     } catch (_) {
       this._clearPath();
@@ -227,7 +237,11 @@ class Combat {
     } else {
       this._clearPath();
     }
-    botLog(this.botId, 'info', `Combat ended (${reason}) after ${Date.now() - this._combatStart}ms`);
+    botLog(
+      this.botId,
+      'info',
+      `Combat ended (${reason}) after ${Date.now() - this._combatStart}ms`
+    );
     this._emit('combatEnd', { reason, entity: was });
   }
 

@@ -8,18 +8,47 @@ const TOSS_DELAY_MS = 100;
 
 /** Junk items to drop when inventory is full (name substring match). */
 const DROP_LIST = new Set([
-  'dirt', 'cobblestone', 'sand', 'gravel', 'flint', 'rotten_flesh',
-  'bone', 'string', 'spider_eye', 'gunpowder', 'feather', 'arrow',
-  'granite', 'diorite', 'andesite', 'netherrack', 'soul_sand',
-  'clay_ball', 'pebble', 'tuff', 'calcite',
+  'dirt',
+  'cobblestone',
+  'sand',
+  'gravel',
+  'flint',
+  'rotten_flesh',
+  'bone',
+  'string',
+  'spider_eye',
+  'gunpowder',
+  'feather',
+  'arrow',
+  'granite',
+  'diorite',
+  'andesite',
+  'netherrack',
+  'soul_sand',
+  'clay_ball',
+  'pebble',
+  'tuff',
+  'calcite',
 ]);
 
 /** Valuables to NEVER drop. */
 const PROTECT_LIST = new Set([
-  'diamond', 'emerald', 'netherite', 'ancient_debris', 'gold_ingot', 'iron_ingot',
-  'diamond_sword', 'netherite_sword', 'diamond_pickaxe', 'netherite_pickaxe',
-  'diamond_chestplate', 'netherite_chestplate', 'elytra', 'totem_of_undying',
-  'enchanted_book', 'nether_star',
+  'diamond',
+  'emerald',
+  'netherite',
+  'ancient_debris',
+  'gold_ingot',
+  'iron_ingot',
+  'diamond_sword',
+  'netherite_sword',
+  'diamond_pickaxe',
+  'netherite_pickaxe',
+  'diamond_chestplate',
+  'netherite_chestplate',
+  'elytra',
+  'totem_of_undying',
+  'enchanted_book',
+  'nether_star',
 ]);
 
 function isDroppable(item) {
@@ -54,13 +83,25 @@ class Inventory {
     this._cleaning = true;
 
     try {
-      botLog(this.botId, 'info', `Inventory cleanup triggered (${used}/${TOTAL_INVENTORY_SLOTS} slots, ${(fill * 100).toFixed(0)}% full)`);
+      botLog(
+        this.botId,
+        'info',
+        `Inventory cleanup triggered (${used}/${TOTAL_INVENTORY_SLOTS} slots, ${(fill * 100).toFixed(0)}% full)`
+      );
       const dropped = await this._dropJunk();
-      botLog(this.botId, 'info', `Inventory cleanup done. Dropped ${dropped} item stacks.`);
+      botLog(
+        this.botId,
+        'info',
+        `Inventory cleanup done. Dropped ${dropped} item stacks.`
+      );
 
       const remaining = bot.inventory.items().length / TOTAL_INVENTORY_SLOTS;
       if (remaining >= FULL_THRESHOLD) {
-        botLog(this.botId, 'warn', 'Inventory still full after cleanup – no droppable items remain.');
+        botLog(
+          this.botId,
+          'warn',
+          'Inventory still full after cleanup – no droppable items remain.'
+        );
         this._emit('inventoryFull');
       }
     } finally {
@@ -78,7 +119,11 @@ class Inventory {
         botLog(this.botId, 'debug', `Dropped ${item.count}x ${item.name}`);
         await new Promise((r) => setTimeout(r, TOSS_DELAY_MS));
       } catch (err) {
-        botLog(this.botId, 'warn', `Failed to drop ${item.name}: ${err.message}`);
+        botLog(
+          this.botId,
+          'warn',
+          `Failed to drop ${item.name}: ${err.message}`
+        );
       }
     }
     return dropped;
@@ -87,12 +132,15 @@ class Inventory {
   /** Called when a pickup fails – inventory is presumably full. */
   onPickupFail() {
     this.checkAndClean(true).catch((err) =>
-      botLog(this.botId, 'error', `Inventory cleanup error: ${err.message}`),
+      botLog(this.botId, 'error', `Inventory cleanup error: ${err.message}`)
     );
   }
 
   get isFull() {
-    return this.bot.inventory.items().length / TOTAL_INVENTORY_SLOTS >= FULL_THRESHOLD;
+    return (
+      this.bot.inventory.items().length / TOTAL_INVENTORY_SLOTS >=
+      FULL_THRESHOLD
+    );
   }
 }
 

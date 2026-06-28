@@ -2,16 +2,28 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { HOSTILE_MOBS, COMBAT_BLACKLIST, ATTACK_WHITELIST, COMBAT } = require('../src/bot/combat/combatConfig');
+const {
+  HOSTILE_MOBS,
+  COMBAT_BLACKLIST,
+  ATTACK_WHITELIST,
+  COMBAT,
+} = require('../src/bot/combat/combatConfig');
 
 test('blacklisted mobs are never in the attack whitelist', () => {
   for (const mob of COMBAT_BLACKLIST) {
-    assert.equal(ATTACK_WHITELIST.has(mob), false, `${mob} must not be attacked`);
+    assert.equal(
+      ATTACK_WHITELIST.has(mob),
+      false,
+      `${mob} must not be attacked`
+    );
   }
 });
 
 test('attack whitelist is hostile mobs minus the blacklist', () => {
-  assert.equal(ATTACK_WHITELIST.size, HOSTILE_MOBS.size - COMBAT_BLACKLIST.size);
+  assert.equal(
+    ATTACK_WHITELIST.size,
+    HOSTILE_MOBS.size - COMBAT_BLACKLIST.size
+  );
   assert.equal(ATTACK_WHITELIST.has('zombie'), true);
   assert.equal(ATTACK_WHITELIST.has('creeper'), false);
 });

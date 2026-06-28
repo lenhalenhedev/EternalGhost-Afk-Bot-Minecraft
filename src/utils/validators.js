@@ -9,12 +9,33 @@
 
 // Known supported Minecraft Java Edition versions for mineflayer.
 const SUPPORTED_VERSIONS = new Set([
-  '1.16.1', '1.16.2', '1.16.3', '1.16.4', '1.16.5',
-  '1.17', '1.17.1',
-  '1.18', '1.18.1', '1.18.2',
-  '1.19', '1.19.1', '1.19.2', '1.19.3', '1.19.4',
-  '1.20', '1.20.1', '1.20.2', '1.20.3', '1.20.4', '1.20.5', '1.20.6',
-  '1.21', '1.21.1', '1.21.2', '1.21.3', '1.21.4',
+  '1.16.1',
+  '1.16.2',
+  '1.16.3',
+  '1.16.4',
+  '1.16.5',
+  '1.17',
+  '1.17.1',
+  '1.18',
+  '1.18.1',
+  '1.18.2',
+  '1.19',
+  '1.19.1',
+  '1.19.2',
+  '1.19.3',
+  '1.19.4',
+  '1.20',
+  '1.20.1',
+  '1.20.2',
+  '1.20.3',
+  '1.20.4',
+  '1.20.5',
+  '1.20.6',
+  '1.21',
+  '1.21.1',
+  '1.21.2',
+  '1.21.3',
+  '1.21.4',
 ]);
 
 const USERNAME_RE = /^[a-zA-Z0-9_]+$/;
@@ -55,7 +76,10 @@ function validateVersion(version) {
 function validatePort(port) {
   const n = parseInt(port, 10);
   if (Number.isNaN(n) || n < 1 || n > 65535) {
-    return { valid: false, reason: 'Port must be an integer between 1 and 65535' };
+    return {
+      valid: false,
+      reason: 'Port must be an integer between 1 and 65535',
+    };
   }
   return { valid: true, value: n };
 }
@@ -67,28 +91,47 @@ function validateUsername(username) {
     return { valid: false, reason: 'Username must be 3-16 characters' };
   }
   if (!USERNAME_RE.test(username)) {
-    return { valid: false, reason: 'Username may only contain letters, numbers, and underscores' };
+    return {
+      valid: false,
+      reason: 'Username may only contain letters, numbers, and underscores',
+    };
   }
   return { valid: true };
 }
 
 /** Validate an IP / hostname string (IPv4, IPv6, or RFC-1123 hostname). */
 function validateHost(host) {
-  if (!host || host.trim() === '') return { valid: false, reason: 'Server address is required' };
-  if (host.length > 255) return { valid: false, reason: 'Server address too long' };
+  if (!host || host.trim() === '')
+    return { valid: false, reason: 'Server address is required' };
+  if (host.length > 255)
+    return { valid: false, reason: 'Server address too long' };
   if (CONTROL_CHARS_RE.test(host) || /\s/.test(host)) {
-    return { valid: false, reason: 'Server address contains invalid characters' };
+    return {
+      valid: false,
+      reason: 'Server address contains invalid characters',
+    };
   }
   if (DOTTED_QUAD_RE.test(host)) {
     // Numeric dotted form must be a valid IPv4; never treat it as a hostname.
     return isValidIpv4(host)
       ? { valid: true, value: host }
-      : { valid: false, reason: 'Server address must be a valid IPv4/IPv6 address or hostname' };
+      : {
+          valid: false,
+          reason:
+            'Server address must be a valid IPv4/IPv6 address or hostname',
+        };
   }
-  if (isValidIpv4(host) || HOSTNAME_RE.test(host) || (host.includes(':') && IPV6_RE.test(host))) {
+  if (
+    isValidIpv4(host) ||
+    HOSTNAME_RE.test(host) ||
+    (host.includes(':') && IPV6_RE.test(host))
+  ) {
     return { valid: true, value: host };
   }
-  return { valid: false, reason: 'Server address must be a valid IPv4/IPv6 address or hostname' };
+  return {
+    valid: false,
+    reason: 'Server address must be a valid IPv4/IPv6 address or hostname',
+  };
 }
 
 /**
@@ -108,17 +151,23 @@ function validatePassword(password) {
     return { valid: false, reason: 'Password must be at most 100 characters' };
   }
   if (/\s/.test(password)) {
-    return { valid: false, reason: 'Password must not contain spaces or newlines' };
+    return {
+      valid: false,
+      reason: 'Password must not contain spaces or newlines',
+    };
   }
   if (CONTROL_CHARS_RE.test(password)) {
-    return { valid: false, reason: 'Password must not contain control characters' };
+    return {
+      valid: false,
+      reason: 'Password must not contain control characters',
+    };
   }
   return { valid: true, value: password };
 }
 
 /**
  * Validate a full bot config object.
- * @returns  valid: boolean, errors: string[] 
+ * @returns  valid: boolean, errors: string[]
  */
 function validateBotConfig({ host, port, username, version, password }) {
   const errors = [];
@@ -147,12 +196,19 @@ function validateChatMessage(message, allowedCommandPrefixes = []) {
     return { valid: false, reason: 'Message exceeds 200 characters' };
   }
   if (CONTROL_CHARS_RE.test(message)) {
-    return { valid: false, reason: 'Message contains invalid control characters' };
+    return {
+      valid: false,
+      reason: 'Message contains invalid control characters',
+    };
   }
   if (message.startsWith('/')) {
     const cmd = message.split(' ')[0].toLowerCase();
     if (!allowedCommandPrefixes.includes(cmd)) {
-      return { valid: false, reason: 'Sending game commands is not allowed. Use the whitelist in config.' };
+      return {
+        valid: false,
+        reason:
+          'Sending game commands is not allowed. Use the whitelist in config.',
+      };
     }
   }
   return { valid: true };

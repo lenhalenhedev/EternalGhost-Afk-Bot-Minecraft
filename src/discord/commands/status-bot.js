@@ -7,16 +7,21 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('status-bot')
     .setDescription('Xem trạng thái chi tiết của một bot')
-    .addStringOption(o =>
-      o.setName('id').setDescription('Bot ID (để trống = dùng bot đang chọn)').setRequired(false)
+    .addStringOption((o) =>
+      o
+        .setName('id')
+        .setDescription('Bot ID (để trống = dùng bot đang chọn)')
+        .setRequired(false)
     ),
 
   async execute(interaction) {
     await interaction.deferReply();
 
-    const partial  = interaction.options.getString('id')?.trim();
+    const partial = interaction.options.getString('id')?.trim();
     const instance = partial
-      ? BotManager.getAllBots().find(b => b.id.startsWith(partial) || b.id === partial)
+      ? BotManager.getAllBots().find(
+          (b) => b.id.startsWith(partial) || b.id === partial
+        )
       : BotManager.getUserSelection(interaction.user.id);
 
     if (!instance) {

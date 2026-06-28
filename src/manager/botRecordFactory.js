@@ -51,9 +51,22 @@ const DEFAULT_COMBAT = Object.freeze({
  * @throws if the configuration is invalid.
  */
 function buildNewRecord(opts, createdBy) {
-  const { host, port, username, password = '', version, autoReconnect = true } = opts;
+  const {
+    host,
+    port,
+    username,
+    password = '',
+    version,
+    autoReconnect = true,
+  } = opts;
 
-  const validation = validateBotConfig({ host, port, username, version, password });
+  const validation = validateBotConfig({
+    host,
+    port,
+    username,
+    version,
+    password,
+  });
   if (!validation.valid) throw new Error(validation.errors.join(', '));
 
   const now = new Date().toISOString();
@@ -98,7 +111,8 @@ function buildEditPatch(record, patch) {
   if (patch.host !== undefined) allowed.host = patch.host;
   if (patch.port !== undefined) allowed.port = parseInt(patch.port, 10);
   if (patch.version !== undefined) allowed.version = patch.version;
-  if (patch.autoReconnect !== undefined) allowed.autoReconnect = !!patch.autoReconnect;
+  if (patch.autoReconnect !== undefined)
+    allowed.autoReconnect = !!patch.autoReconnect;
   if (patch.password !== undefined && patch.password !== '') {
     allowed.encryptedPassword = encrypt(patch.password, config.encryption.key);
   }

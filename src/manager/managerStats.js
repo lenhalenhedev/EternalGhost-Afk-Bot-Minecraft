@@ -17,7 +17,9 @@ function computeStats(bots) {
     memHeapUsed: mem.heapUsed,
     memRSS: mem.rss,
     memExternal: mem.external,
-    estimatedPerBotMB: alive.length ? Math.round(mem.heapUsed / alive.length / 1024 / 1024) : 0,
+    estimatedPerBotMB: alive.length
+      ? Math.round(mem.heapUsed / alive.length / 1024 / 1024)
+      : 0,
   };
 }
 

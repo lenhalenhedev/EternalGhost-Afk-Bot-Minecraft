@@ -5,17 +5,38 @@
  */
 
 const HOSTILE_MOBS = new Set([
-  'zombie', 'skeleton', 'spider', 'cave_spider', 'creeper', 'enderman',
-  'witch', 'blaze', 'ghast', 'slime', 'magma_cube', 'phantom',
-  'drowned', 'husk', 'stray', 'pillager', 'vindicator', 'vex',
-  'warden', 'ravager', 'hoglin', 'piglin_brute', 'zoglin',
+  'zombie',
+  'skeleton',
+  'spider',
+  'cave_spider',
+  'creeper',
+  'enderman',
+  'witch',
+  'blaze',
+  'ghast',
+  'slime',
+  'magma_cube',
+  'phantom',
+  'drowned',
+  'husk',
+  'stray',
+  'pillager',
+  'vindicator',
+  'vex',
+  'warden',
+  'ravager',
+  'hoglin',
+  'piglin_brute',
+  'zoglin',
 ]);
 
 /** Mobs we do NOT engage – too dangerous or griefing risk. */
 const COMBAT_BLACKLIST = new Set(['creeper', 'enderman', 'warden', 'ghast']);
 
 /** Attack only these mobs (the rest of HOSTILE_MOBS). */
-const ATTACK_WHITELIST = new Set([...HOSTILE_MOBS].filter((m) => !COMBAT_BLACKLIST.has(m)));
+const ATTACK_WHITELIST = new Set(
+  [...HOSTILE_MOBS].filter((m) => !COMBAT_BLACKLIST.has(m))
+);
 
 const COMBAT = Object.freeze({
   SCAN_RANGE: 15, // blocks

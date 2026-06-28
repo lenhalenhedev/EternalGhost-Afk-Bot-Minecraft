@@ -62,9 +62,17 @@ class DiscordNotifier {
         .setTitle(`${emoji} Bot Alert \u2014 ${type}`)
         .setDescription(message)
         .addFields(
-          { name: 'Bot', value: `\`${instance.record.username}\`@\`${instance.record.host}:${instance.record.port}\``, inline: true },
+          {
+            name: 'Bot',
+            value: `\`${instance.record.username}\`@\`${instance.record.host}:${instance.record.port}\``,
+            inline: true,
+          },
           { name: 'State', value: instance.state, inline: true },
-          { name: 'Bot ID', value: `\`${instance.id.slice(0, 8)}\``, inline: true },
+          {
+            name: 'Bot ID',
+            value: `\`${instance.id.slice(0, 8)}\``,
+            inline: true,
+          }
         )
         .setTimestamp();
       await channel.send({ embeds: [embed] });
@@ -85,14 +93,24 @@ class DiscordNotifier {
         .setDescription(`\`\`\`\n${String(detail).slice(0, 1_800)}\n\`\`\``)
         .addFields(
           { name: 'Context', value: context || 'runtime error', inline: false },
-          { name: 'Bot', value: `\`${instance.record.username}\`@\`${instance.record.host}:${instance.record.port}\``, inline: true },
+          {
+            name: 'Bot',
+            value: `\`${instance.record.username}\`@\`${instance.record.host}:${instance.record.port}\``,
+            inline: true,
+          },
           { name: 'State', value: instance.state, inline: true },
-          { name: 'Bot ID', value: `\`${instance.id.slice(0, 8)}\``, inline: true },
+          {
+            name: 'Bot ID',
+            value: `\`${instance.id.slice(0, 8)}\``,
+            inline: true,
+          }
         )
         .setTimestamp();
       await channel.send({ embeds: [embed] });
     } catch (sendErr) {
-      logger.error(`[DiscordNotifier] Failed to send error log: ${sendErr.message}`);
+      logger.error(
+        `[DiscordNotifier] Failed to send error log: ${sendErr.message}`
+      );
     }
   }
 
@@ -122,7 +140,10 @@ class DiscordNotifier {
         .addFields(
           { name: 'Action', value: action, inline: true },
           { name: 'User ID', value: userId, inline: true },
-          { name: 'Details', value: `\`\`\`json\n${JSON.stringify(meta, null, 2)}\n\`\`\`` },
+          {
+            name: 'Details',
+            value: `\`\`\`json\n${JSON.stringify(meta, null, 2)}\n\`\`\``,
+          }
         )
         .setTimestamp();
       await channel.send({ embeds: [embed] });

@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  MessageFlags,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildListEntry } = require('../embeds');
 
@@ -9,8 +13,12 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('list-bot')
     .setDescription('Danh sách tất cả các bot')
-    .addIntegerOption(o =>
-      o.setName('page').setDescription('Trang (mặc định: 1)').setMinValue(1).setRequired(false)
+    .addIntegerOption((o) =>
+      o
+        .setName('page')
+        .setDescription('Trang (mặc định: 1)')
+        .setMinValue(1)
+        .setRequired(false)
     ),
 
   async execute(interaction) {
@@ -18,15 +26,17 @@ module.exports = {
 
     const bots = BotManager.getAllBots();
     if (bots.length === 0) {
-      return interaction.editReply('📭 Chưa có bot nào. Dùng `/create-bot` để tạo.');
+      return interaction.editReply(
+        '📭 Chưa có bot nào. Dùng `/create-bot` để tạo.'
+      );
     }
 
-    const page       = interaction.options.getInteger('page') ?? 1;
+    const page = interaction.options.getInteger('page') ?? 1;
     const totalPages = Math.ceil(bots.length / PAGE_SIZE);
-    const slice      = bots.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    const slice = bots.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
     const selectedBot = BotManager.getUserSelection(interaction.user.id);
-    const lines = slice.map(b => buildListEntry(b, selectedBot?.id === b.id));
+    const lines = slice.map((b) => buildListEntry(b, selectedBot?.id === b.id));
 
     const embed = new EmbedBuilder()
       .setColor(0x3498db)

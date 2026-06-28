@@ -29,8 +29,26 @@ test('isSafe rejects missing blocks (unloaded chunk)', () => {
 });
 
 test('isSafe rejects non-solid ground and obstructed space', () => {
-  assert.equal(isSafe(makeBot({ '0,-1,0': AIR, '0,0,0': AIR, '0,1,0': AIR }), vec3, 0, 0, 0), false);
-  assert.equal(isSafe(makeBot({ '0,-1,0': SOLID, '0,0,0': SOLID, '0,1,0': AIR }), vec3, 0, 0, 0), false);
+  assert.equal(
+    isSafe(
+      makeBot({ '0,-1,0': AIR, '0,0,0': AIR, '0,1,0': AIR }),
+      vec3,
+      0,
+      0,
+      0
+    ),
+    false
+  );
+  assert.equal(
+    isSafe(
+      makeBot({ '0,-1,0': SOLID, '0,0,0': SOLID, '0,1,0': AIR }),
+      vec3,
+      0,
+      0,
+      0
+    ),
+    false
+  );
 });
 
 test('isSafe rejects danger blocks in the column', () => {

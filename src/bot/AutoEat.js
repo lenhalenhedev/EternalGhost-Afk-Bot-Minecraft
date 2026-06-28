@@ -8,13 +8,31 @@ const CHECK_INTERVAL = 3_000;
 const EAT_ANIMATION_MS = 1_500;
 
 const FOOD_PRIORITY = [
-  'golden_apple', 'enchanted_golden_apple',
-  'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken',
-  'cooked_salmon', 'cooked_cod', 'cooked_rabbit',
-  'bread', 'baked_potato',
-  'beef', 'porkchop', 'mutton', 'chicken', 'salmon', 'cod', 'rabbit',
-  'carrot', 'potato', 'melon_slice', 'apple', 'sweet_berries',
-  'cookie', 'pumpkin_pie',
+  'golden_apple',
+  'enchanted_golden_apple',
+  'cooked_beef',
+  'cooked_porkchop',
+  'cooked_mutton',
+  'cooked_chicken',
+  'cooked_salmon',
+  'cooked_cod',
+  'cooked_rabbit',
+  'bread',
+  'baked_potato',
+  'beef',
+  'porkchop',
+  'mutton',
+  'chicken',
+  'salmon',
+  'cod',
+  'rabbit',
+  'carrot',
+  'potato',
+  'melon_slice',
+  'apple',
+  'sweet_berries',
+  'cookie',
+  'pumpkin_pie',
   'dried_kelp',
 ];
 
@@ -51,7 +69,9 @@ class AutoEat {
       clearInterval(this._checker);
     }
     this._checker = setInterval(() => {
-      this._check().catch((err) => botLog(this.botId, 'warn', `AutoEat check error: ${err.message}`));
+      this._check().catch((err) =>
+        botLog(this.botId, 'warn', `AutoEat check error: ${err.message}`)
+      );
     }, CHECK_INTERVAL);
     botLog(this.botId, 'debug', 'AutoEat started.');
   }
@@ -104,7 +124,11 @@ class AutoEat {
       await sleep(EAT_ANIMATION_MS);
       this.bot.deactivateItem();
       this._lastEat = Date.now();
-      botLog(this.botId, 'debug', `AutoEat: ate ${foodItem.name} (food was ${this.bot.food})`);
+      botLog(
+        this.botId,
+        'debug',
+        `AutoEat: ate ${foodItem.name} (food was ${this.bot.food})`
+      );
     } catch (err) {
       botLog(this.botId, 'warn', `AutoEat failed: ${err.message}`);
     } finally {

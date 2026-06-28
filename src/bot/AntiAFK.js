@@ -43,7 +43,11 @@ class AntiAFK {
     movements.maxDropDown = 3;
     movements.blockDangerFaces = true;
     this.bot.pathfinder.setMovements(movements);
-    botLog(this.botId, 'info', `AntiAFK started. Anchor: ${JSON.stringify(this.anchor)}`);
+    botLog(
+      this.botId,
+      'info',
+      `AntiAFK started. Anchor: ${JSON.stringify(this.anchor)}`
+    );
     this._scheduleMove();
     this._scheduleRotation();
   }
@@ -78,7 +82,11 @@ class AntiAFK {
     for (let attempt = 0; attempt < ANTI_AFK.MAX_RETRIES; attempt++) {
       const target = pickTarget(this.bot, vec3, this.anchor);
       if (!target) {
-        botLog(this.botId, 'debug', 'AntiAFK: no safe target, idling this cycle.');
+        botLog(
+          this.botId,
+          'debug',
+          'AntiAFK: no safe target, idling this cycle.'
+        );
         break;
       }
       try {
@@ -86,11 +94,15 @@ class AntiAFK {
         await withTimeout(
           gotoWithStuckDetection(this.bot, goal, ANTI_AFK.STUCK_TIMEOUT),
           ANTI_AFK.MOVE_TIMEOUT,
-          'AntiAFK move',
+          'AntiAFK move'
         );
         break;
       } catch (err) {
-        botLog(this.botId, 'debug', `AntiAFK attempt ${attempt + 1}/${ANTI_AFK.MAX_RETRIES} failed: ${err.message}`);
+        botLog(
+          this.botId,
+          'debug',
+          `AntiAFK attempt ${attempt + 1}/${ANTI_AFK.MAX_RETRIES} failed: ${err.message}`
+        );
         if (attempt === ANTI_AFK.MAX_RETRIES - 1) await this._returnToAnchor();
       }
     }
@@ -102,10 +114,23 @@ class AntiAFK {
     if (!this.anchor) return;
     botLog(this.botId, 'debug', 'AntiAFK: returning to anchor.');
     try {
-      const goal = new goals.GoalNear(this.anchor.x, this.anchor.y, this.anchor.z, 2);
-      await withTimeout(this.bot.pathfinder.goto(goal), ANTI_AFK.MOVE_TIMEOUT, 'Anchor return');
+      const goal = new goals.GoalNear(
+        this.anchor.x,
+        this.anchor.y,
+        this.anchor.z,
+        2
+      );
+      await withTimeout(
+        this.bot.pathfinder.goto(goal),
+        ANTI_AFK.MOVE_TIMEOUT,
+        'Anchor return'
+      );
     } catch (_) {
-      botLog(this.botId, 'warn', 'AntiAFK: could not return to anchor. Idling.');
+      botLog(
+        this.botId,
+        'warn',
+        'AntiAFK: could not return to anchor. Idling.'
+      );
     }
   }
 

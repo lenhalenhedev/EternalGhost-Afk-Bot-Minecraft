@@ -39,7 +39,9 @@ class Queue {
     }
     if (this._queue.length >= this.maxSize) {
       this.dropped++;
-      this._logger.warn(`${this._tag()} Overflow – dropping task (total dropped: ${this.dropped})`);
+      this._logger.warn(
+        `${this._tag()} Overflow – dropping task (total dropped: ${this.dropped})`
+      );
       return Promise.reject(new Error('Queue full – task dropped'));
     }
     return new Promise((resolve, reject) => {
@@ -61,8 +63,13 @@ class Queue {
             fn(),
             new Promise((_, rej) => {
               timer = setTimeout(
-                () => rej(new Error(`Queue task timed out after ${this.taskTimeout}ms`)),
-                this.taskTimeout,
+                () =>
+                  rej(
+                    new Error(
+                      `Queue task timed out after ${this.taskTimeout}ms`
+                    )
+                  ),
+                this.taskTimeout
               );
             }),
           ]);

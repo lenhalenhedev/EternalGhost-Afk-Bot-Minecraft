@@ -70,7 +70,11 @@ class AuthFlow {
   async authenticate(prompt) {
     const i = this._i;
     if (this._inProgress) {
-      botLog(i.id, 'debug', 'Auth already in progress – ignoring duplicate trigger.');
+      botLog(
+        i.id,
+        'debug',
+        'Auth already in progress – ignoring duplicate trigger.'
+      );
       return;
     }
     this._inProgress = true;
@@ -87,13 +91,21 @@ class AuthFlow {
     // Creation-time validation already rejects this, so reaching here is a bug
     // or tampering – fail closed.
     if (/\s/.test(password)) {
-      botLog(i.id, 'error', 'Stored password contains whitespace; aborting to avoid command injection.');
+      botLog(
+        i.id,
+        'error',
+        'Stored password contains whitespace; aborting to avoid command injection.'
+      );
       await this._abort('invalid stored password');
       return;
     }
 
     const delay = randInt(AUTH_SEND_MIN_MS, AUTH_SEND_MAX_MS);
-    botLog(i.id, 'info', `Auth attempt ${this._attempts}/${MAX_LOGIN_ATTEMPTS} – sending in ${delay}ms`);
+    botLog(
+      i.id,
+      'info',
+      `Auth attempt ${this._attempts}/${MAX_LOGIN_ATTEMPTS} – sending in ${delay}ms`
+    );
     await sleep(delay);
 
     // Bail if the connection died or auth already succeeded while we waited.
@@ -104,7 +116,11 @@ class AuthFlow {
 
     try {
       if (/register/i.test(prompt) && this._attempts === 1) {
-        botLog(i.id, 'info', 'Server requested registration – sending /register');
+        botLog(
+          i.id,
+          'info',
+          'Server requested registration – sending /register'
+        );
         i.bot.chat(`/register ${password} ${password}`);
       } else {
         i.bot.chat(`/login ${password}`);
@@ -124,8 +140,14 @@ class AuthFlow {
     this._retryTimer = setTimeout(() => {
       this._retryTimer = null;
       if (i.state !== BOT_STATES.AUTHENTICATING) return;
-      botLog(i.id, 'warn', `No auth response after ${AUTH_RETRY_MS / 1000}s – retrying.`);
-      this.authenticate('/login').catch((err) => botLog(i.id, 'error', `Auth retry error: ${err.message}`));
+      botLog(
+        i.id,
+        'warn',
+        `No auth response after ${AUTH_RETRY_MS / 1000}s – retrying.`
+      );
+      this.authenticate('/login').catch((err) =>
+        botLog(i.id, 'error', `Auth retry error: ${err.message}`)
+      );
     }, AUTH_RETRY_MS);
   }
 

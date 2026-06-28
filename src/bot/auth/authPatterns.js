@@ -12,23 +12,44 @@
 // Prompts that tell the client it must authenticate.
 const AUTH_PROMPTS = [
   // Vietnamese (confirmed server language)
-  /vui l\u00f2ng \u0111\u0103ng k\u00fd/i, /\u0111\u0103ng k\u00fd v\u00e0o m\u00e1y ch\u1ee7/i, /\/register/i,
-  /vui l\u00f2ng \u0111\u0103ng nh\u1eadp/i, /\u0111\u0103ng nh\u1eadp v\u00e0o m\u00e1y ch\u1ee7/i, /\/login/i,
-  /ch\u01b0a \u0111\u0103ng nh\u1eadp/i, /ch\u01b0a \u0111\u0103ng k\u00fd/i, /b\u1ea1n ch\u01b0a/i,
-  /c\u00e1ch d\u00f9ng.*register/i, /c\u00e1ch d\u00f9ng.*login/i,
+  /vui l\u00f2ng \u0111\u0103ng k\u00fd/i,
+  /\u0111\u0103ng k\u00fd v\u00e0o m\u00e1y ch\u1ee7/i,
+  /\/register/i,
+  /vui l\u00f2ng \u0111\u0103ng nh\u1eadp/i,
+  /\u0111\u0103ng nh\u1eadp v\u00e0o m\u00e1y ch\u1ee7/i,
+  /\/login/i,
+  /ch\u01b0a \u0111\u0103ng nh\u1eadp/i,
+  /ch\u01b0a \u0111\u0103ng k\u00fd/i,
+  /b\u1ea1n ch\u01b0a/i,
+  /c\u00e1ch d\u00f9ng.*register/i,
+  /c\u00e1ch d\u00f9ng.*login/i,
   // English
-  /you need to register/i, /please register/i,
-  /you need to log ?in/i, /please log ?in/i,
-  /not logged in/i, /please authenticate/i, /you must (log ?in|authenticate)/i,
-  /use \/login/i, /use \/register/i, /type \/login/i, /type \/register/i,
+  /you need to register/i,
+  /please register/i,
+  /you need to log ?in/i,
+  /please log ?in/i,
+  /not logged in/i,
+  /please authenticate/i,
+  /you must (log ?in|authenticate)/i,
+  /use \/login/i,
+  /use \/register/i,
+  /type \/login/i,
+  /type \/register/i,
   /login to (play|continue|proceed)/i,
   /account (not found|does not exist|unregistered)/i,
   // Dutch
-  /inloggen/i, /aanmelden/i, /registreer/i,
+  /inloggen/i,
+  /aanmelden/i,
+  /registreer/i,
   // Russian / East EU
-  /\u043f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430/i, /\u0432\u043e\u0439\u0434\u0438\u0442\u0435/i, /\u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u0443\u0439\u0442\u0435\u0441\u044c/i, /\u0430\u0432\u0442\u043e\u0440\u0438\u0437\u0443/i,
+  /\u043f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430/i,
+  /\u0432\u043e\u0439\u0434\u0438\u0442\u0435/i,
+  /\u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u0443\u0439\u0442\u0435\u0441\u044c/i,
+  /\u0430\u0432\u0442\u043e\u0440\u0438\u0437\u0443/i,
   // German
-  /anmeld/i, /einloggen/i, /registrier/i,
+  /anmeld/i,
+  /einloggen/i,
+  /registrier/i,
 ];
 
 // Success signals from AuthMe / LoginSecurity.
@@ -42,15 +63,24 @@ const AUTH_SUCCESS = [
   /ch\u00e0o m\u1eebng/i,
   // English
   /you (are|have been) (now |successfully |)logged in/i,
-  /successfully logged in/i, /login successful/i,
-  /logged in successfully/i, /welcome back/i,
-  /you are now authenticated/i, /authentication successful/i,
+  /successfully logged in/i,
+  /login successful/i,
+  /logged in successfully/i,
+  /welcome back/i,
+  /you are now authenticated/i,
+  /authentication successful/i,
   /you (may|can) now play/i,
-  /logged in!/i, /login accepted/i, /you are logged in/i,
+  /logged in!/i,
+  /login accepted/i,
+  /you are logged in/i,
   // Dutch
-  /je bent (nu |succesvol |)ingelogd/i, /inloggen geslaagd/i, /welkom terug/i,
+  /je bent (nu |succesvol |)ingelogd/i,
+  /inloggen geslaagd/i,
+  /welkom terug/i,
   // Russian
-  /\u0434\u043e\u0431\u0440\u043e \u043f\u043e\u0436\u0430\u043b\u043e\u0432\u0430\u0442\u044c/i, /\u0432\u044b (\u0443\u0441\u043f\u0435\u0448\u043d\u043e |)\u0430\u0432\u0442\u043e\u0440\u0438\u0437\u043e\u0432\u0430\u043d\u044b/i, /\u0432\u044b \u0432\u043e\u0448\u043b\u0438/i,
+  /\u0434\u043e\u0431\u0440\u043e \u043f\u043e\u0436\u0430\u043b\u043e\u0432\u0430\u0442\u044c/i,
+  /\u0432\u044b (\u0443\u0441\u043f\u0435\u0448\u043d\u043e |)\u0430\u0432\u0442\u043e\u0440\u0438\u0437\u043e\u0432\u0430\u043d\u044b/i,
+  /\u0432\u044b \u0432\u043e\u0448\u043b\u0438/i,
   // German
   /erfolgreich (an|ein)gemeldet/i,
 ];
