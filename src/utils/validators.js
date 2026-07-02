@@ -9,6 +9,15 @@
 
 // Known supported Minecraft Java Edition versions for mineflayer.
 const SUPPORTED_VERSIONS = new Set([
+  '1.8',
+  '1.9',
+  '1.10',
+  '1.11',
+  '1.12',
+  '1.13',
+  '1.14',
+  '1.15',
+  '1.16',
   '1.16.1',
   '1.16.2',
   '1.16.3',
@@ -36,7 +45,10 @@ const SUPPORTED_VERSIONS = new Set([
   '1.21.2',
   '1.21.3',
   '1.21.4',
+  '1.21.9',
+  '1.21.11'
 ]);
+
 
 const USERNAME_RE = /^[a-zA-Z0-9_]+$/;
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;

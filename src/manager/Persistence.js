@@ -1,9 +1,19 @@
 'use strict';
 /**
- * PostgreSQL-backed persistence layer.
+ * PostgreSQL-backed persistence layer (Facade).
  *
- * MEMORY LEAK / PERFORMANCE FIXES:
- * - _writeChain is now bounded: if too many tasks accumulate (e.g., DB is slow),
+ * STRUCTURAL REFACTOR (SRP): row mapping and raw repository queries have
+ * been extracted into sibling modules so this file is left holding only
+ * what actually needs to be a single cohesive unit — the in-memory state,
+ * the write-behind queue/transaction orchestration, and the public API
+ * that BotManager and other callers depend on. No public method name,
+ * signature, or export shape has changed.
+ *
+ *   - src/manager/persistenceHelpers.js -> row <-> record mappers, indexBy
+ *   - src/manager/botRepository.js      -> raw INSERT/UPDATE/DELETE queries
+ *
+ * MEMORY LEAK / PERFORMANCE FIXES (unchanged from before the split):
+ * - _writeChain is bounded: if too many tasks accumulate (e.g., DB is slow),
  *   new writes are dropped with a warning instead of building an unbounded chain
  * - _pending counter accurately tracks in-flight operations
  * - Error handling in _enqueueTask prevents unhandled promise rejections from
@@ -19,77 +29,12 @@ const {
   DEFAULT_AUTOEAT,
   DEFAULT_COMBAT,
 } = require('./botRecordFactory');
+const { recordFromRow, indexBy } = require('./persistenceHelpers');
+const botRepository = require('./botRepository');
 
 // FIX: Maximum pending writes before we start dropping (backpressure)
 const MAX_PENDING_WRITES = 500;
 const FLUSH_TIMEOUT_MS = 10_000;
-
-// ─── Row ↔ record mappers ──────────────────────────────────────────────────
-function antiAfkFromRow(r) {
-  if (!r) return { ...DEFAULT_ANTIAFK };
-  return {
-    enabled: r.enabled,
-    minRadius: r.min_radius,
-    maxRadius: r.max_radius,
-    minInterval: r.min_interval,
-    maxInterval: r.max_interval,
-    maxRetries: r.max_retries,
-    moveTimeout: r.move_timeout,
-    stuckTimeout: r.stuck_timeout,
-    rotationInterval: r.rotation_interval,
-  };
-}
-
-function autoEatFromRow(r) {
-  if (!r) return { ...DEFAULT_AUTOEAT };
-  return {
-    enabled: r.enabled,
-    eatThreshold: r.eat_threshold,
-    eatCooldown: r.eat_cooldown,
-    checkInterval: r.check_interval,
-  };
-}
-
-function combatFromRow(r) {
-  if (!r) return { ...DEFAULT_COMBAT };
-  return {
-    enabled: r.enabled,
-    scanRange: r.scan_range,
-    engageRange: r.engage_range,
-    maxCombatDuration: r.max_combat_duration,
-    retreatHpPct: r.retreat_hp_pct,
-    scanInterval: r.scan_interval,
-    attackInterval: r.attack_interval,
-    invisibleTimeout: r.invisible_timeout,
-  };
-}
-
-function recordFromRow(row, antiAfkRow, autoEatRow, combatRow) {
-  return {
-    id: row.id,
-    host: row.host,
-    port: row.port,
-    username: row.username,
-    encryptedPassword: row.encrypted_password || '',
-    version: row.version,
-    autoReconnect: row.auto_reconnect,
-    wasRunning: row.was_running,
-    hidden: row.hidden,
-    createdBy: row.created_by,
-    createdAt: toIso(row.created_at),
-    updatedAt: toIso(row.updated_at),
-    antiAfk: antiAfkFromRow(antiAfkRow),
-    autoEat: autoEatFromRow(autoEatRow),
-    combat: combatFromRow(combatRow),
-  };
-}
-
-function toIso(value) {
-  if (!value) return new Date().toISOString();
-  return value instanceof Date
-    ? value.toISOString()
-    : new Date(value).toISOString();
-}
 
 // ─── Persistence ──────────────────────────────────────────────────────
 class Persistence {
@@ -183,35 +128,10 @@ class Persistence {
   saveBot(record) {
     const normalised = this._normaliseRecord(record);
     this._data.bots[normalised.id] = normalised;
-    this._enqueueTask(async (client) => {
-      await client.query(
-        `INSERT INTO bots
-           (id, host, port, username, encrypted_password, version,
-            auto_reconnect, was_running, hidden, created_by, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-         ON CONFLICT (id) DO UPDATE SET
-           host=$2, port=$3, username=$4, encrypted_password=$5, version=$6,
-           auto_reconnect=$7, was_running=$8, hidden=$9, created_by=$10,
-           created_at=$11, updated_at=$12`,
-        [
-          normalised.id,
-          normalised.host,
-          normalised.port,
-          normalised.username,
-          normalised.encryptedPassword,
-          normalised.version,
-          normalised.autoReconnect,
-          normalised.wasRunning,
-          normalised.hidden,
-          normalised.createdBy,
-          normalised.createdAt,
-          normalised.updatedAt,
-        ]
-      );
-      await this._upsertAntiAfk(client, normalised.id, normalised.antiAfk);
-      await this._upsertAutoEat(client, normalised.id, normalised.autoEat);
-      await this._upsertCombat(client, normalised.id, normalised.combat);
-    }, `saveBot(${normalised.id})`);
+    this._enqueueTask(
+      (client) => botRepository.saveBotFull(client, normalised),
+      `saveBot(${normalised.id})`
+    );
   }
 
   deleteBot(id) {
@@ -220,7 +140,10 @@ class Persistence {
     for (const [uid, bid] of Object.entries(this._data.userSelections)) {
       if (bid === id) delete this._data.userSelections[uid];
     }
-    this._enqueue('DELETE FROM bots WHERE id = $1', [id], `deleteBot(${id})`);
+    this._enqueueTask(
+      (client) => botRepository.deleteBotRow(client, id),
+      `deleteBot(${id})`
+    );
     return true;
   }
 
@@ -259,11 +182,11 @@ class Persistence {
     Object.assign(bot[section], patch);
     this._enqueueTask(async (client) => {
       if (section === 'antiAfk')
-        await this._upsertAntiAfk(client, id, bot.antiAfk);
+        await botRepository.upsertAntiAfk(client, id, bot.antiAfk);
       else if (section === 'autoEat')
-        await this._upsertAutoEat(client, id, bot.autoEat);
+        await botRepository.upsertAutoEat(client, id, bot.autoEat);
       else if (section === 'combat')
-        await this._upsertCombat(client, id, bot.combat);
+        await botRepository.upsertCombat(client, id, bot.combat);
     }, `updateBotConfig(${id}, ${section})`);
   }
 
@@ -349,66 +272,6 @@ class Persistence {
     };
   }
 
-  _upsertAntiAfk(client, botId, c) {
-    return client.query(
-      `INSERT INTO bot_antiafk_config
-         (bot_id, enabled, min_radius, max_radius, min_interval, max_interval,
-          max_retries, move_timeout, stuck_timeout, rotation_interval)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (bot_id) DO UPDATE SET
-         enabled=$2, min_radius=$3, max_radius=$4, min_interval=$5,
-         max_interval=$6, max_retries=$7, move_timeout=$8, stuck_timeout=$9,
-         rotation_interval=$10`,
-      [
-        botId,
-        c.enabled,
-        c.minRadius,
-        c.maxRadius,
-        c.minInterval,
-        c.maxInterval,
-        c.maxRetries,
-        c.moveTimeout,
-        c.stuckTimeout,
-        c.rotationInterval,
-      ]
-    );
-  }
-
-  _upsertAutoEat(client, botId, c) {
-    return client.query(
-      `INSERT INTO bot_autoeat_config
-         (bot_id, enabled, eat_threshold, eat_cooldown, check_interval)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (bot_id) DO UPDATE SET
-         enabled=$2, eat_threshold=$3, eat_cooldown=$4, check_interval=$5`,
-      [botId, c.enabled, c.eatThreshold, c.eatCooldown, c.checkInterval]
-    );
-  }
-
-  _upsertCombat(client, botId, c) {
-    return client.query(
-      `INSERT INTO bot_combat_config
-         (bot_id, enabled, scan_range, engage_range, max_combat_duration,
-          retreat_hp_pct, scan_interval, attack_interval, invisible_timeout)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (bot_id) DO UPDATE SET
-         enabled=$2, scan_range=$3, engage_range=$4, max_combat_duration=$5,
-         retreat_hp_pct=$6, scan_interval=$7, attack_interval=$8,
-         invisible_timeout=$9`,
-      [
-        botId,
-        c.enabled,
-        c.scanRange,
-        c.engageRange,
-        c.maxCombatDuration,
-        c.retreatHpPct,
-        c.scanInterval,
-        c.attackInterval,
-        c.invisibleTimeout,
-      ]
-    );
-  }
-
   /** Queue a single parameterised statement. */
   _enqueue(text, params, label) {
     this._enqueueTask((client) => client.query(text, params), label);
@@ -448,12 +311,6 @@ class Persistence {
       });
     return this._writeChain;
   }
-}
-
-function indexBy(rows, key) {
-  const out = {};
-  for (const row of rows) out[row[key]] = row;
-  return out;
 }
 
 module.exports = new Persistence();
