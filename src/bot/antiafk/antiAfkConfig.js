@@ -1,9 +1,6 @@
 'use strict';
 
-/**
- * Tunable constants and danger-detection for the anti-AFK subsystem.
- * Pure module (no mineflayer/runtime dependencies) so it is trivially testable.
- */
+const { strictInt } = require('../../utils/security');
 
 const ANTI_AFK = Object.freeze({
   MIN_RADIUS: 5,
@@ -11,12 +8,11 @@ const ANTI_AFK = Object.freeze({
   MIN_INTERVAL: 5_000,
   MAX_INTERVAL: 15_000,
   MAX_RETRIES: 3,
-  MOVE_TIMEOUT: 20_000, // abort pathfinding after 20s
-  STUCK_TIMEOUT: 12_000, // declare "stuck" if position doesn't change for 12s
-  ROTATION_INTERVAL: 3_000, // random look-around every 3s
+  MOVE_TIMEOUT: 20_000,
+  STUCK_TIMEOUT: 12_000,
+  ROTATION_INTERVAL: 3_000,
 });
 
-/** Danger block names (fragment match). */
 const DANGER_NAMES = [
   'lava',
   'fire',
@@ -26,10 +22,40 @@ const DANGER_NAMES = [
   'wither_rose',
 ];
 
-/** True if a block name refers to a damaging block. */
 function isDanger(name) {
   if (!name) return false;
   return DANGER_NAMES.some((d) => name.includes(d));
 }
 
-module.exports = { ANTI_AFK, DANGER_NAMES, isDanger };
+function intOr(value, fallback, bounds) {
+  const parsed = strictInt(value, bounds);
+  return parsed.valid ? parsed.value : fallback;
+}
+
+function resolveAntiAfkConfig(cfg) {
+  const source = cfg && typeof cfg === 'object' ? cfg : {};
+  return Object.freeze({
+    enabled: source.enabled !== false,
+    minRadius: intOr(source.minRadius, ANTI_AFK.MIN_RADIUS, { min: 1 }),
+    maxRadius: intOr(source.maxRadius, ANTI_AFK.MAX_RADIUS, { min: 1 }),
+    minInterval: intOr(source.minInterval, ANTI_AFK.MIN_INTERVAL, { min: 1 }),
+    maxInterval: intOr(source.maxInterval, ANTI_AFK.MAX_INTERVAL, { min: 1 }),
+    maxRetries: intOr(source.maxRetries, ANTI_AFK.MAX_RETRIES, { min: 1 }),
+    moveTimeout: intOr(source.moveTimeout, ANTI_AFK.MOVE_TIMEOUT, { min: 1 }),
+    stuckTimeout: intOr(source.stuckTimeout, ANTI_AFK.STUCK_TIMEOUT, {
+      min: 1,
+    }),
+    rotationInterval: intOr(
+      source.rotationInterval,
+      ANTI_AFK.ROTATION_INTERVAL,
+      { min: 1 }
+    ),
+  });
+}
+
+module.exports = {
+  ANTI_AFK,
+  DANGER_NAMES,
+  isDanger,
+  resolveAntiAfkConfig,
+};

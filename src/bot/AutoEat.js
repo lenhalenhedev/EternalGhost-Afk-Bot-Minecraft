@@ -1,13 +1,14 @@
 'use strict';
 const { sleep } = require('../utils/helpers');
 const { botLog } = require('../services/logger');
+const { strictInt } = require('../utils/security');
 
 const EAT_THRESHOLD = 14;
 const EAT_COOLDOWN = 1_500;
 const CHECK_INTERVAL = 3_000;
 const EAT_ANIMATION_MS = 1_500;
 
-const FOOD_PRIORITY = [
+const FOOD_PRIORITY = Object.freeze([
   'golden_apple',
   'enchanted_golden_apple',
   'cooked_beef',
@@ -34,7 +35,7 @@ const FOOD_PRIORITY = [
   'cookie',
   'pumpkin_pie',
   'dried_kelp',
-];
+]);
 
 function foodScore(item) {
   if (!item) return -1;
@@ -43,20 +44,28 @@ function foodScore(item) {
   return idx === -1 ? -1 : FOOD_PRIORITY.length - idx;
 }
 
-/**
- * Automatically eats when hungry, pausing during combat.
- *
- * MEMORY LEAK FIXES:
- * - start() is idempotent: clears existing interval before creating a new one
- * - stop() nullifies all state to aid GC
- * - _check() guards against use-after-stop via _checker null check
- */
+function intOr(value, fallback, bounds) {
+  const parsed = strictInt(value, bounds);
+  return parsed.valid ? parsed.value : fallback;
+}
+
+function resolveAutoEatConfig(cfg) {
+  const source = cfg && typeof cfg === 'object' ? cfg : {};
+  return Object.freeze({
+    enabled: source.enabled !== false,
+    eatThreshold: intOr(source.eatThreshold, EAT_THRESHOLD, { min: 0, max: 20 }),
+    eatCooldown: intOr(source.eatCooldown, EAT_COOLDOWN, { min: 0 }),
+    checkInterval: intOr(source.checkInterval, CHECK_INTERVAL, { min: 1 }),
+  });
+}
+
 class AutoEat {
-  constructor(bot, botId, emit) {
+  constructor(bot, botId, emit, cfg) {
     this.bot = bot;
     this.botId = botId;
     this._emit = emit;
-    this._enabled = true;
+    this.cfg = resolveAutoEatConfig(cfg);
+    this._enabled = this.cfg.enabled;
     this._eating = false;
     this._lastEat = 0;
     this._inCombat = false;
@@ -64,7 +73,6 @@ class AutoEat {
   }
 
   start() {
-    // FIX: Idempotent — clear existing interval to prevent duplicates
     if (this._checker) {
       clearInterval(this._checker);
     }
@@ -72,7 +80,7 @@ class AutoEat {
       this._check().catch((err) =>
         botLog(this.botId, 'warn', `AutoEat check error: ${err.message}`)
       );
-    }, CHECK_INTERVAL);
+    }, this.cfg.checkInterval);
     botLog(this.botId, 'debug', 'AutoEat started.');
   }
 
@@ -87,11 +95,10 @@ class AutoEat {
   }
 
   async _check() {
-    // FIX: Guard against running after stop (race condition with async)
     if (!this._checker) return;
     if (!this._enabled || this._eating || this._inCombat) return;
-    if (Date.now() - this._lastEat < EAT_COOLDOWN) return;
-    if (this.bot.food >= EAT_THRESHOLD) return;
+    if (Date.now() - this._lastEat < this.cfg.eatCooldown) return;
+    if (this.bot.food >= this.cfg.eatThreshold) return;
     const food = this._findBestFood();
     if (!food) {
       botLog(this.botId, 'warn', 'AutoEat: no food found in inventory!');

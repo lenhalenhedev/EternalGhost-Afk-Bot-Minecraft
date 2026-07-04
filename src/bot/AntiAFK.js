@@ -3,27 +3,17 @@ const { Vec3 } = require('vec3');
 const { Movements, goals } = require('mineflayer-pathfinder');
 const { randInt, randFloat, withTimeout } = require('../utils/helpers');
 const { botLog } = require('../services/logger');
-const { ANTI_AFK } = require('./antiafk/antiAfkConfig');
+const { resolveAntiAfkConfig } = require('./antiafk/antiAfkConfig');
 const { pickTarget } = require('./antiafk/safeSpot');
 const { gotoWithStuckDetection } = require('./antiafk/movement');
 
 const vec3 = (x, y, z) => new Vec3(x, y, z);
 
-/**
- * Keeps a bot from being kicked for inactivity.
- *
- * MEMORY LEAK FIXES:
- * - pauseForCombat() now properly nullifies timer references after clearing
- * - resumeAfterCombat() checks if timers already exist before creating new ones
- *   to prevent duplicate interval/timeout accumulation
- * - _scheduleRotation() clears existing rotation timer before creating a new one
- * - _scheduleMove() clears existing move timer before creating a new one
- * - stop() is fully idempotent
- */
 class AntiAFK {
-  constructor(bot, botId) {
+  constructor(bot, botId, cfg) {
     this.bot = bot;
     this.botId = botId;
+    this.cfg = resolveAntiAfkConfig(cfg);
     this.anchor = null;
     this._timer = null;
     this._rotTimer = null;
@@ -69,18 +59,22 @@ class AntiAFK {
 
   _scheduleMove() {
     if (!this._active) return;
-    // FIX: Clear any existing timer before scheduling a new one to prevent
-    // duplicate timers from accumulating (e.g., if called multiple times).
     clearTimeout(this._timer);
-    const delay = randInt(ANTI_AFK.MIN_INTERVAL, ANTI_AFK.MAX_INTERVAL);
+    const delay = randInt(this.cfg.minInterval, this.cfg.maxInterval);
     this._timer = setTimeout(() => this._doMove(), delay);
   }
 
   async _doMove() {
     if (!this._active) return;
     this._moving = true;
-    for (let attempt = 0; attempt < ANTI_AFK.MAX_RETRIES; attempt++) {
-      const target = pickTarget(this.bot, vec3, this.anchor);
+    for (let attempt = 0; attempt < this.cfg.maxRetries; attempt++) {
+      const target = pickTarget(
+        this.bot,
+        vec3,
+        this.anchor,
+        this.cfg.minRadius,
+        this.cfg.maxRadius
+      );
       if (!target) {
         botLog(
           this.botId,
@@ -92,8 +86,8 @@ class AntiAFK {
       try {
         const goal = new goals.GoalNear(target.x, target.y, target.z, 1);
         await withTimeout(
-          gotoWithStuckDetection(this.bot, goal, ANTI_AFK.STUCK_TIMEOUT),
-          ANTI_AFK.MOVE_TIMEOUT,
+          gotoWithStuckDetection(this.bot, goal, this.cfg.stuckTimeout),
+          this.cfg.moveTimeout,
           'AntiAFK move'
         );
         break;
@@ -101,9 +95,9 @@ class AntiAFK {
         botLog(
           this.botId,
           'debug',
-          `AntiAFK attempt ${attempt + 1}/${ANTI_AFK.MAX_RETRIES} failed: ${err.message}`
+          `AntiAFK attempt ${attempt + 1}/${this.cfg.maxRetries} failed: ${err.message}`
         );
-        if (attempt === ANTI_AFK.MAX_RETRIES - 1) await this._returnToAnchor();
+        if (attempt === this.cfg.maxRetries - 1) await this._returnToAnchor();
       }
     }
     this._moving = false;
@@ -122,7 +116,7 @@ class AntiAFK {
       );
       await withTimeout(
         this.bot.pathfinder.goto(goal),
-        ANTI_AFK.MOVE_TIMEOUT,
+        this.cfg.moveTimeout,
         'Anchor return'
       );
     } catch (_) {
@@ -136,8 +130,6 @@ class AntiAFK {
 
   _scheduleRotation() {
     if (!this._active) return;
-    // FIX: Clear existing rotation timer before creating a new one to prevent
-    // interval accumulation when resumeAfterCombat is called multiple times.
     clearInterval(this._rotTimer);
     this._rotTimer = setInterval(() => {
       if (!this._active || this._moving) return;
@@ -148,12 +140,10 @@ class AntiAFK {
       } catch (_) {
         /* ignore */
       }
-    }, ANTI_AFK.ROTATION_INTERVAL);
+    }, this.cfg.rotationInterval);
   }
 
-  /** Called when combat starts – stop moving immediately. */
   pauseForCombat() {
-    // FIX: Clear and nullify both timers to prevent dangling references
     clearTimeout(this._timer);
     clearInterval(this._rotTimer);
     this._timer = null;
@@ -167,11 +157,8 @@ class AntiAFK {
     botLog(this.botId, 'debug', 'AntiAFK paused for combat.');
   }
 
-  /** Resume after combat ends. */
   resumeAfterCombat() {
     if (!this._active) return;
-    // FIX: Only schedule if not already scheduled (prevents duplicate timers
-    // if resumeAfterCombat is called multiple times without a pause in between).
     if (!this._timer) {
       this._scheduleMove();
     }

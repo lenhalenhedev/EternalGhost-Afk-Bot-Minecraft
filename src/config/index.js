@@ -1,6 +1,8 @@
 'use strict';
 require('dotenv').config();
 
+const { strictInt } = require('../utils/security');
+
 function requireEnv(key) {
   const val = process.env[key];
   if (!val || val.trim() === '')
@@ -12,10 +14,11 @@ function optionalEnv(key, defaultValue = '') {
   return (process.env[key] || defaultValue).trim();
 }
 
-// ─── Hard-coded Discord log channel ─────────────────────────────────────
-// Bot errors / bug logs are posted to this channel. Paste your Discord channel
-// ID between the quotes to hard-code it. The DISCORD_LOG_CHANNEL_ID env var, if
-// set, takes precedence over this value.
+function intEnv(key, fallback, bounds = {}) {
+  const parsed = strictInt(process.env[key], bounds);
+  return parsed.valid ? parsed.value : fallback;
+}
+
 const HARDCODED_LOG_CHANNEL_ID = '';
 
 function validateHexKey(key, name) {
@@ -61,30 +64,23 @@ try {
       oldKey: oldKey || null,
     },
     storage: {
-      // Retained only for the one-off JSON→Postgres migration script.
       dataFile: optionalEnv('DATA_FILE', './data/bots.json'),
       logDir: optionalEnv('LOG_DIR', './logs'),
       logLevel: optionalEnv('LOG_LEVEL', 'info'),
     },
-    // Primary datastore is now PostgreSQL. The pg Pool itself is built in
-    // src/config/database.js (it reads these same env vars); this block is
-    // surfaced here so the rest of the app can introspect the settings.
     database: {
       url: optionalEnv('DATABASE_URL'),
       host: optionalEnv('PGHOST', 'localhost'),
-      port: parseInt(optionalEnv('PGPORT', '5432'), 10),
+      port: intEnv('PGPORT', 5432, { min: 1, max: 65535 }),
       user: optionalEnv('PGUSER'),
       database: optionalEnv('PGDATABASE'),
-      poolMax: parseInt(optionalEnv('DB_POOL_MAX', '10'), 10),
+      poolMax: intEnv('DB_POOL_MAX', 10, { min: 1 }),
     },
     limits: {
-      maxBots: parseInt(optionalEnv('MAX_BOTS', '50'), 10),
-      queueSize: parseInt(optionalEnv('BOT_QUEUE_SIZE', '100'), 10),
-      queueTimeout: parseInt(optionalEnv('BOT_QUEUE_TIMEOUT', '10000'), 10),
-      logSummaryIntervalMin: parseInt(
-        optionalEnv('LOG_SUMMARY_INTERVAL_MIN', '15'),
-        10
-      ),
+      maxBots: intEnv('MAX_BOTS', 50, { min: 1 }),
+      queueSize: intEnv('BOT_QUEUE_SIZE', 100, { min: 1 }),
+      queueTimeout: intEnv('BOT_QUEUE_TIMEOUT', 10_000, { min: 1 }),
+      logSummaryIntervalMin: intEnv('LOG_SUMMARY_INTERVAL_MIN', 15, { min: 1 }),
     },
   };
 } catch (err) {

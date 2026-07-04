@@ -1,14 +1,5 @@
 'use strict';
-/**
- * A sequential async queue for bot operations.
- *
- * MEMORY LEAK FIXES:
- * - Timeout timer is ALWAYS cleared in a `finally` block (the original already
- *   did this correctly, but we add an explicit null assignment for clarity)
- * - drain() now also clears any active timeout timer reference
- * - The _queue array is explicitly emptied on drain/reset to release closures
- * - Added AbortController pattern for cleaner timeout cancellation
- */
+
 class Queue {
   constructor(botId, maxSize = 100, taskTimeoutMs = 10_000, logger = console) {
     this.botId = botId;
@@ -25,12 +16,7 @@ class Queue {
     return `[Queue:${String(this.botId).slice(0, 8)}]`;
   }
 
-  /**
-   * Enqueue an async task function.
-   * @param {() => Promise<any>} fn
-   * @returns {Promise<any>}
-   */
-  enqueue(fn) {
+  enqueue(fn, signal = null) {
     if (typeof fn !== 'function') {
       return Promise.reject(new TypeError('Queue.enqueue expects a function'));
     }
@@ -40,12 +26,12 @@ class Queue {
     if (this._queue.length >= this.maxSize) {
       this.dropped++;
       this._logger.warn(
-        `${this._tag()} Overflow – dropping task (total dropped: ${this.dropped})`
+        `${this._tag()} Overflow \u2013 dropping task (total dropped: ${this.dropped})`
       );
-      return Promise.reject(new Error('Queue full – task dropped'));
+      return Promise.reject(new Error('Queue full \u2013 task dropped'));
     }
     return new Promise((resolve, reject) => {
-      this._queue.push({ fn, resolve, reject });
+      this._queue.push({ fn, resolve, reject, signal });
       if (!this._running) this._run();
     });
   }
@@ -56,33 +42,45 @@ class Queue {
     try {
       while (this._queue.length > 0) {
         if (this._draining) break;
-        const { fn, resolve, reject } = this._queue.shift();
+        const { fn, resolve, reject, signal } = this._queue.shift();
+        const controller = new AbortController();
+        const linkAbort = () => controller.abort(signal.reason);
+        if (signal) {
+          if (signal.aborted) controller.abort(signal.reason);
+          else signal.addEventListener('abort', linkAbort, { once: true });
+        }
         let timer = null;
         try {
           const result = await Promise.race([
-            fn(),
+            fn(controller.signal),
             new Promise((_, rej) => {
-              timer = setTimeout(
-                () =>
-                  rej(
-                    new Error(
-                      `Queue task timed out after ${this.taskTimeout}ms`
-                    )
-                  ),
-                this.taskTimeout
-              );
+              timer = setTimeout(() => {
+                const err = new Error(
+                  `Queue task timed out after ${this.taskTimeout}ms`
+                );
+                rej(err);
+                controller.abort(err);
+              }, this.taskTimeout);
+            }),
+            new Promise((_, rej) => {
+              const onAbort = () =>
+                rej(new Error('Queue task aborted before completion'));
+              if (controller.signal.aborted) onAbort();
+              else
+                controller.signal.addEventListener('abort', onAbort, {
+                  once: true,
+                });
             }),
           ]);
           resolve(result);
         } catch (err) {
           reject(err);
         } finally {
-          // FIX: Always clear the timeout timer to prevent leaks.
-          // Also null the reference to help GC if the closure is retained.
           if (timer !== null) {
             clearTimeout(timer);
             timer = null;
           }
+          if (signal) signal.removeEventListener('abort', linkAbort);
         }
       }
     } finally {
@@ -90,10 +88,8 @@ class Queue {
     }
   }
 
-  /** Stop accepting new tasks and reject all pending ones. */
   drain() {
     this._draining = true;
-    // FIX: Reject and release all pending tasks to free their closures
     while (this._queue.length > 0) {
       const { reject } = this._queue.shift();
       try {
@@ -102,16 +98,14 @@ class Queue {
         /* ignore if reject handler throws */
       }
     }
-    // FIX: Ensure the array is truly empty (no dangling references)
     this._queue = [];
   }
 
-  /** Reset drain state so the queue can accept tasks again after a restart. */
   reset() {
     this._draining = false;
     this._queue = [];
     if (typeof this._logger.debug === 'function') {
-      this._logger.debug(`${this._tag()} Reset – ready to accept tasks.`);
+      this._logger.debug(`${this._tag()} Reset \u2013 ready to accept tasks.`);
     }
   }
 

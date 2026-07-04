@@ -1,19 +1,8 @@
 'use strict';
 const { goals } = require('mineflayer-pathfinder');
 const { botLog } = require('../services/logger');
-const { ATTACK_WHITELIST, COMBAT } = require('./combat/combatConfig');
+const { ATTACK_WHITELIST, resolveCombatConfig } = require('./combat/combatConfig');
 const { equipBestWeapon } = require('./combat/weapons');
-
-/**
- * Reactive melee combat for a single bot.
- *
- * MEMORY LEAK FIXES:
- * - _startCombat now clears any pre-existing _attackLoop and _targetTimeout
- *   before creating new ones (prevents timer stacking on rapid re-engagement)
- * - _invisibleSince Map is bounded and cleared on stop()
- * - _endCombat always clears both interval and timeout (no orphaned timers)
- * - stop() is fully idempotent and clears all state
- */
 
 const FLYING_MOBS = new Set(['phantom', 'vex', 'ghast', 'blaze', 'bee']);
 const VERTICAL_ENGAGE_LIMIT = 3;
@@ -23,10 +12,11 @@ const FLYING_RETREAT_COOLDOWN_MS = 10_000;
 const FLEE_THROTTLE_MS = 1_000;
 
 class Combat {
-  constructor(bot, botId, emit) {
+  constructor(bot, botId, emit, cfg) {
     this.bot = bot;
     this.botId = botId;
     this._emit = emit;
+    this.cfg = resolveCombatConfig(cfg);
     this._active = false;
     this._target = null;
     this._scanner = null;
@@ -40,11 +30,10 @@ class Combat {
   }
 
   startScanning() {
-    // FIX: Idempotent - clear existing scanner before creating a new one
     if (this._scanner) {
       clearInterval(this._scanner);
     }
-    this._scanner = setInterval(() => this._scan(), COMBAT.SCAN_INTERVAL);
+    this._scanner = setInterval(() => this._scan(), this.cfg.scanInterval);
   }
 
   stopScanning() {
@@ -77,7 +66,7 @@ class Combat {
     if (!bot.entity) return null;
     const pos = bot.entity.position;
     let nearest = null;
-    let minDist = COMBAT.SCAN_RANGE + 1;
+    let minDist = this.cfg.scanRange + 1;
     for (const entity of Object.values(bot.entities)) {
       if (!entity || entity.id === bot.entity.id) continue;
       if (entity.type !== 'mob' || !entity.position) continue;
@@ -95,8 +84,6 @@ class Combat {
   _startCombat(entity) {
     if (this._active) return;
 
-    // FIX: Defensively clear any orphaned timers from a previous combat cycle
-    // that might not have been properly cleaned up (e.g., race conditions).
     clearInterval(this._attackLoop);
     clearTimeout(this._targetTimeout);
     this._attackLoop = null;
@@ -105,7 +92,7 @@ class Combat {
     this._active = true;
     this._target = entity;
     this._combatStart = Date.now();
-    this._invisibleSince.clear(); // FIX: Clear stale invisible tracking
+    this._invisibleSince.clear();
 
     botLog(
       this.botId,
@@ -113,12 +100,12 @@ class Combat {
       `Combat started vs ${this._mobName(entity)} (dist: ${this.bot.entity.position.distanceTo(entity.position).toFixed(1)})`
     );
     this._emit('combatStart', entity);
-    this._attackLoop = setInterval(() => this._tick(), COMBAT.ATTACK_INTERVAL);
+    this._attackLoop = setInterval(() => this._tick(), this.cfg.attackInterval);
     equipBestWeapon(this.bot);
 
     this._targetTimeout = setTimeout(() => {
       if (this._active && this._target === entity) this._endCombat('timeout');
-    }, COMBAT.MAX_COMBAT_DURATION);
+    }, this.cfg.maxCombatDuration);
   }
 
   _tick() {
@@ -140,7 +127,7 @@ class Combat {
     if (entity.invisible) {
       if (!firstInvisible) {
         this._invisibleSince.set(entity.id, Date.now());
-      } else if (Date.now() - firstInvisible > COMBAT.INVISIBLE_TIMEOUT) {
+      } else if (Date.now() - firstInvisible > this.cfg.invisibleTimeout) {
         return this._endCombat('target invisible too long');
       }
     } else {
@@ -150,15 +137,15 @@ class Combat {
     const maxHp =
       bot.player?.entity?.attributes?.['minecraft:generic.max_health']?.value ||
       20;
-    if (bot.health / maxHp < COMBAT.RETREAT_HP_PCT) {
+    if (bot.health / maxHp < this.cfg.retreatHpPct) {
       return this._retreat(entity);
     }
 
     const dist = bot.entity.position.distanceTo(entity.position);
-    if (dist > COMBAT.SCAN_RANGE) return this._endCombat('out of range');
+    if (dist > this.cfg.scanRange) return this._endCombat('out of range');
 
     const verticalGap = entity.position.y - bot.entity.position.y;
-    if (dist <= COMBAT.ENGAGE_RANGE && verticalGap <= VERTICAL_ENGAGE_LIMIT) {
+    if (dist <= this.cfg.engageRange && verticalGap <= VERTICAL_ENGAGE_LIMIT) {
       try {
         bot.attack(entity);
       } catch (_) {
@@ -221,7 +208,6 @@ class Combat {
   }
 
   _endCombat(reason, opts = {}) {
-    // FIX: Always clear both timers to prevent orphaned timer leaks
     clearInterval(this._attackLoop);
     clearTimeout(this._targetTimeout);
     this._attackLoop = null;
@@ -230,7 +216,7 @@ class Combat {
     const was = this._target;
     this._target = null;
     this._active = false;
-    this._invisibleSince.clear(); // FIX: Clear the Map to free memory
+    this._invisibleSince.clear();
 
     if (opts.fleeFrom) {
       this._fleeFrom(opts.fleeFrom);
@@ -245,7 +231,6 @@ class Combat {
     this._emit('combatEnd', { reason, entity: was });
   }
 
-  /** Stop combat immediately. Full, idempotent teardown. */
   stop() {
     clearInterval(this._scanner);
     clearInterval(this._attackLoop);
@@ -257,7 +242,7 @@ class Combat {
     this._target = null;
     this._retreatUntil = 0;
     this._lastFleeAt = 0;
-    this._invisibleSince.clear(); // FIX: Use .clear() instead of reassigning
+    this._invisibleSince.clear();
     this._goalActive = false;
     try {
       this.bot.pathfinder.setGoal(null);

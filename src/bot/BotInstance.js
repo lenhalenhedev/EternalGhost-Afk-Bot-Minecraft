@@ -109,7 +109,7 @@ class BotInstance extends EventEmitter {
     return this._queue.enqueue(async () => {
       this._bot.chat(message);
       await sleep(CHAT_THROTTLE_MS);
-    });
+    }, this.abortSignal);
   }
 
   async _connect() {
