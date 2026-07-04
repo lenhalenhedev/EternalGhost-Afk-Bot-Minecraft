@@ -58,6 +58,7 @@ const logger = winston.createLogger({
 });
 
 // ─── In-memory buffers ────────────────────────────────────────────────────────
+const { sanitizeForLog } = require('../utils/security');
 const { LogBuffers } = require('./logBuffer');
 const buffers = new LogBuffers();
 
@@ -66,7 +67,7 @@ function getBotLogs(botId, maxLines = 50, maxAgeMs = 0) {
 }
 
 function addToSummary(level, botId, message) {
-  buffers.addToSummary(level, botId, message);
+  buffers.addToSummary(level, botId, sanitizeForLog(message));
 }
 
 function flushSummary() {
@@ -100,10 +101,11 @@ function shutdown() {
 
 // ─── Convenience wrapper ──────────────────────────────────────────────────────
 function botLog(botId, level, message) {
-  logger.log({ level, message, botId });
-  buffers.pushBotLog(botId, level, message);
+  const safe = sanitizeForLog(message);
+  logger.log({ level, message: safe, botId });
+  buffers.pushBotLog(botId, level, safe);
   if (level === 'warn' || level === 'error') {
-    buffers.addToSummary(level, botId, message);
+    buffers.addToSummary(level, botId, safe);
   }
 }
 

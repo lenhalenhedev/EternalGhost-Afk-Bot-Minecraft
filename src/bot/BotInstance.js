@@ -17,25 +17,18 @@ const { sleep } = require('../utils/helpers');
 const config = require('../config');
 
 const CHAT_THROTTLE_MS = 200;
+const MAX_EVENT_LISTENERS = 20;
 
 /**
  * Orchestrates a single Minecraft bot's lifecycle: owns the state machine and
- * delegates everything else.
- *
- * MEMORY LEAK FIXES:
- * - Explicit maxListeners to prevent EventEmitter warnings
- * - Nullification of all references in _destroyBot
- * - WeakRef pattern not needed here since bot lifecycle is well-defined
- * - Proper cleanup of _respawnHandler to prevent listener stacking
+ * delegates everything else. Every connection allocates timers, listeners, an
+ * AbortController, and gameplay subsystems; teardown paths clear, remove, and
+ * null all of them so nothing survives a disconnect, reconnect, or destroy.
  */
 class BotInstance extends EventEmitter {
   constructor(record) {
     super();
-    // FIX: Set explicit max listeners to prevent warnings and detect leaks early.
-    // Each BotInstance can have: stateChange, alert, botError, noFood,
-    // inventoryFull, healthUpdate, afkStarted, combatStart, combatEnd,
-    // reconnecting, stopped = ~11 event types with 1-2 listeners each.
-    this.setMaxListeners(20);
+    this.setMaxListeners(MAX_EVENT_LISTENERS);
 
     this.id = record.id;
     this.record = record;
@@ -56,10 +49,10 @@ class BotInstance extends EventEmitter {
     this._startTime = null;
     this._lastHealthTick = 0;
     this._respawnHandler = null;
-    this._destroyed = false; // FIX: Guard against use-after-destroy
+    this._abort = null;
+    this._destroyed = false;
   }
 
-  // ─── Public read API ───
   get state() {
     return this._state;
   }
@@ -68,6 +61,9 @@ class BotInstance extends EventEmitter {
   }
   get password() {
     return this._password;
+  }
+  get abortSignal() {
+    return this._abort ? this._abort.signal : null;
   }
   get reconnectAttempts() {
     return this._reconnect.currentAttempts;
@@ -88,7 +84,6 @@ class BotInstance extends EventEmitter {
     return this._bot?._client?.latency ?? 0;
   }
 
-  // ─── Public commands ───
   async start() {
     if (this._destroyed) throw new Error('BotInstance has been destroyed');
     if (!STARTABLE_STATES.has(this._state)) {
@@ -117,26 +112,14 @@ class BotInstance extends EventEmitter {
     });
   }
 
-  // ─── Connection flow ───
   async _connect() {
-    // FIX: Guard against connecting a destroyed instance
     if (this._destroyed) return;
 
-    // Drop any previous mineflayer listeners before creating a new client to
-    // prevent listener accumulation across reconnects (memory leak fix).
-    if (this._bot) {
-      try {
-        this._bot.removeAllListeners();
-        this._bot.end();
-      } catch (_) {
-        /* ignore */
-      }
-      this._bot = null;
-    }
+    this._teardownConnection();
 
-    // Stale damage detection across connections would otherwise mis-fire combat.
     this._lastHealthTick = 0;
     this._respawnHandler = null;
+    this._abort = new AbortController();
     this._setState(BOT_STATES.CONNECTING);
     botLog(
       this.id,
@@ -155,7 +138,14 @@ class BotInstance extends EventEmitter {
     }
     this._bot = bot;
     this._auth.reset();
-    bindBotEvents(this, bot);
+
+    try {
+      bindBotEvents(this, bot);
+    } catch (err) {
+      botLog(this.id, 'error', `Event binding failed: ${err.message}`);
+      await this._destroyBot('event binding failure');
+      this._setState(BOT_STATES.ERROR);
+    }
   }
 
   _decryptPassword() {
@@ -170,7 +160,6 @@ class BotInstance extends EventEmitter {
     }
   }
 
-  // ─── State transitions ───
   _transitionToPlaying() {
     transitionToPlaying(this);
   }
@@ -178,7 +167,6 @@ class BotInstance extends EventEmitter {
     transitionToAFK(this);
   }
 
-  // ─── Internal helpers ───
   _setState(newState) {
     const old = this._state;
     if (old === newState) return;
@@ -196,40 +184,68 @@ class BotInstance extends EventEmitter {
     this._auth.reset();
   }
 
-  async _destroyBot(reason) {
-    this._sub.stopAll();
-    this._clearTimers();
+  _abortInFlight() {
+    if (this._abort) {
+      try {
+        this._abort.abort();
+      } catch (_) {
+        /* ignore */
+      }
+      this._abort = null;
+    }
+  }
+
+  _teardownConnection() {
     if (this._bot) {
       try {
         this._bot.pathfinder?.setGoal(null);
       } catch (_) {
         /* ignore */
       }
+      if (this._respawnHandler) {
+        try {
+          this._bot.removeListener('spawn', this._respawnHandler);
+        } catch (_) {
+          /* ignore */
+        }
+      }
       try {
         this._bot.removeAllListeners();
-        this._bot.quit(reason);
+        this._bot.end();
       } catch (_) {
         /* ignore */
       }
       this._bot = null;
     }
-    this._lastHealthTick = 0;
     this._respawnHandler = null;
-    // FIX: Clear decrypted password from memory after disconnect
+  }
+
+  async _destroyBot(reason) {
+    this._sub.stopAll();
+    this._clearTimers();
+    this._abortInFlight();
+    if (this._bot) {
+      try {
+        this._bot.quit(reason);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    this._teardownConnection();
+    this._lastHealthTick = 0;
     this._password = '';
   }
 
-  /** Full teardown for permanent removal. */
   async destroy() {
     this._destroyed = true;
     await this.stop(true);
     this._queue.drain();
     this.removeAllListeners();
-    // FIX: Null out references to allow GC of the entire object graph
     this._sub = null;
     this._queue = null;
     this._auth = null;
     this._reconnect = null;
+    this._abort = null;
   }
 
   toJSON() {

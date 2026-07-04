@@ -10,84 +10,134 @@ const DUP_LOGIN_MIN_MS = 60_000;
 const DUP_LOGIN_MAX_MS = 120_000;
 const DAMAGE_EPSILON = 0.5;
 
-// Marker so the same mineflayer bot is never wired twice. Each reconnect builds
-// a fresh bot (old one is removeAllListeners'd in BotInstance._connect), but this
-// guard makes double-binding impossible even if bindBotEvents is called again.
-//
-// FIX: Using a module-scoped Symbol.for ensures the marker is consistent even
-// if this module is somehow loaded multiple times (e.g., different require paths).
 const BOUND = Symbol.for('eternalghost.botEventsBound');
 
 /**
  * Wire every mineflayer event handler for one connection onto the BotInstance.
  *
- * MEMORY LEAK FIXES:
- * - Idempotent binding via BOUND symbol prevents listener accumulation
- * - The old bot's listeners are removed in BotInstance._connect() before this
- *   is called, so we never have stale listeners on a dead connection
- * - Death handler uses bot.once('spawn') with explicit removal tracking to
- *   prevent respawn handler stacking
- * - All event handlers use arrow functions bound to the specific instance/bot
- *   pair, so they don't retain references to previous connections
+ * Every handler is wrapped so a malformed or malicious packet can never crash
+ * the process: failures are logged generically and the connection is torn down
+ * via bot.end(), and rejected promises are contained so they never unwind to
+ * the Node.js event loop as unhandled rejections.
  */
 function bindBotEvents(instance, bot) {
   if (bot[BOUND]) {
-    botLog(instance.id, 'debug', 'bindBotEvents skipped – bot already bound.');
+    botLog(instance.id, 'debug', 'bindBotEvents skipped - bot already bound.');
     return;
   }
   bot[BOUND] = true;
 
-  bot.once('login', () =>
-    botLog(instance.id, 'info', 'TCP login established. Waiting for spawn…')
+  const guard = makeGuard(instance, bot);
+
+  bot.once(
+    'login',
+    guard('login', () =>
+      botLog(instance.id, 'info', 'TCP login established. Waiting for spawn...')
+    )
   );
 
-  bot.once('spawn', () => {
-    botLog(instance.id, 'info', 'Spawned in world.');
-    instance._startTime = Date.now();
-    instance._loginTimer = setTimeout(() => {
-      if (instance.state === BOT_STATES.CONNECTING) {
-        botLog(
-          instance.id,
-          'info',
-          'No auth prompt received – assuming no-auth server.'
-        );
-        instance._transitionToPlaying();
+  bot.once(
+    'spawn',
+    guard('spawn', () => {
+      botLog(instance.id, 'info', 'Spawned in world.');
+      instance._startTime = Date.now();
+      instance._loginTimer = setTimeout(() => {
+        if (instance.state === BOT_STATES.CONNECTING) {
+          botLog(
+            instance.id,
+            'info',
+            'No auth prompt received - assuming no-auth server.'
+          );
+          instance._transitionToPlaying();
+        }
+      }, NO_AUTH_TIMEOUT_MS);
+    })
+  );
+
+  bot.on(
+    'message',
+    guard('message', (jsonMsg) => onServerMessage(instance, jsonMsg))
+  );
+  bot.on('health', guard('health', () => onHealth(instance, bot)));
+  bot.on('death', guard('death', () => onDeath(instance, bot)));
+
+  bot.on(
+    'playerCollect',
+    guard('playerCollect', (collector) => {
+      if (collector?.username === bot.username && instance._sub?.inventory) {
+        instance._sub.inventory.checkAndClean().catch(() => {});
       }
-    }, NO_AUTH_TIMEOUT_MS);
-  });
-
-  bot.on('message', (jsonMsg) => onServerMessage(instance, jsonMsg));
-  bot.on('health', () => onHealth(instance, bot));
-  bot.on('death', () => onDeath(instance, bot));
-
-  bot.on('playerCollect', (collector) => {
-    if (collector?.username === bot.username && instance._sub?.inventory) {
-      instance._sub.inventory.checkAndClean().catch(() => {});
-    }
-  });
+    })
+  );
 
   bot.on('error', (err) => {
-    botLog(instance.id, 'error', `Bot error: ${err.message}`);
+    botLog(instance.id, 'error', `Bot error: ${err?.message ?? 'unknown'}`);
     instance.emit('botError', err);
   });
 
-  bot.on('kicked', (reason) => {
-    const msg =
-      typeof reason === 'object' ? JSON.stringify(reason) : String(reason);
-    botLog(instance.id, 'warn', `Kicked: ${msg}`);
-    instance._reconnect.handleDisconnect(`Kicked: ${msg}`);
-  });
+  bot.on(
+    'kicked',
+    guard('kicked', (reason) => {
+      const msg =
+        typeof reason === 'object' ? JSON.stringify(reason) : String(reason);
+      botLog(instance.id, 'warn', `Kicked: ${msg}`);
+      instance._reconnect.handleDisconnect(`Kicked: ${msg}`);
+    })
+  );
 
-  bot.on('end', (reason) => {
-    if (instance.state === BOT_STATES.OFFLINE) return;
-    botLog(instance.id, 'warn', `Connection ended: ${reason}`);
-    instance._reconnect.handleDisconnect(String(reason));
-  });
+  bot.on(
+    'end',
+    guard(
+      'end',
+      (reason) => {
+        if (instance.state === BOT_STATES.OFFLINE) return;
+        botLog(instance.id, 'warn', `Connection ended: ${reason}`);
+        instance._reconnect.handleDisconnect(String(reason));
+      },
+      { terminateOnError: false }
+    )
+  );
 
   try {
     bot.loadPlugin(pathfinder);
   } catch (err) {
     botLog(instance.id, 'warn', `Pathfinder load failed: ${err.message}`);
+  }
+}
+
+function makeGuard(instance, bot) {
+  return (label, fn, opts = {}) => {
+    const terminateOnError = opts.terminateOnError !== false;
+    return (...args) => {
+      try {
+        const result = fn(...args);
+        if (result && typeof result.then === 'function') {
+          result.catch(() => {
+            botLog(
+              instance.id,
+              'error',
+              `Async handler failure in "${label}"`
+            );
+            if (terminateOnError) safeEnd(bot);
+          });
+        }
+      } catch (_) {
+        botLog(
+          instance.id,
+          'error',
+          `Handler failure in "${label}"; terminating connection`
+        );
+        if (terminateOnError) safeEnd(bot);
+      }
+    };
+  };
+}
+
+function safeEnd(bot) {
+  try {
+    bot.end();
+  } catch (_) {
+    /* ignore */
   }
 }
 
@@ -105,7 +155,7 @@ function onServerMessage(instance, jsonMsg) {
     botLog(
       instance.id,
       'warn',
-      `Duplicate login detected. Backing off ${Math.round(delay / 1000)}s…`
+      `Duplicate login detected. Backing off ${Math.round(delay / 1000)}s...`
     );
     instance
       ._destroyBot('duplicate login')
@@ -174,7 +224,6 @@ function onHealth(instance, bot) {
 function onDeath(instance, bot) {
   botLog(instance.id, 'warn', `Bot died (HP=${bot.health}).`);
 
-  // Stop combat + anti-AFK ticking immediately
   if (instance._sub?.combat) instance._sub.combat.stop();
   if (instance._sub?.antiAFK) instance._sub.antiAFK.stop();
   try {
@@ -183,8 +232,6 @@ function onDeath(instance, bot) {
     /* ignore */
   }
 
-  // FIX: Clear the settle timer to prevent orphaned timers from double-firing
-  // transitionToAFK after respawn.
   clearTimeout(instance._settleTimer);
   instance._settleTimer = null;
   instance._setState(BOT_STATES.PLAYING);
@@ -197,9 +244,6 @@ function onDeath(instance, bot) {
     );
   }
 
-  // FIX: Single respawn handler with explicit removal of any previous one.
-  // This prevents handler stacking when the bot dies multiple times before
-  // respawning (each death would add another 'spawn' listener without this).
   if (instance._respawnHandler) {
     try {
       bot.removeListener('spawn', instance._respawnHandler);

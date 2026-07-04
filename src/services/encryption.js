@@ -2,17 +2,20 @@
 const crypto = require('crypto');
 
 const ALGORITHM = 'aes-256-gcm';
-const IV_LENGTH = 12; // 96-bit IV is optimal for GCM
-const TAG_LENGTH = 16; // 128-bit auth tag
+const IV_LENGTH = 12;
+const TAG_LENGTH = 16;
 const SEP = ':';
-const VERSION = '1'; // format version prefix for future migrations
+const VERSION = '1';
+const HEX_KEY_RE = /^[0-9a-fA-F]{64}$/;
 
-/**
- * Derive a short fingerprint from a hex key so we can detect which key
- * was used to encrypt a payload – enables key rotation without storing
- * the key itself.
- */
+function assertValidHexKey(hexKey) {
+  if (typeof hexKey !== 'string' || !HEX_KEY_RE.test(hexKey)) {
+    throw new Error('Encryption key must be a 64-character hex string (32 bytes)');
+  }
+}
+
 function fingerprint(hexKey) {
+  assertValidHexKey(hexKey);
   return crypto
     .createHash('sha256')
     .update(hexKey, 'hex')
@@ -20,45 +23,48 @@ function fingerprint(hexKey) {
     .slice(0, 8);
 }
 
-/**
- * Encrypt plaintext with AES-256-GCM.
- * Output format: `v1:<fp>:<ivHex>:<tagHex>:<cipherHex>`
- *
- * @param {string} plaintext
- * @param {string} hexKey  – 64-char hex key (32 bytes)
- * @returns {string} encrypted payload
- */
-function encrypt(plaintext, hexKey) {
-  if (!plaintext) return '';
-  const key = Buffer.from(hexKey, 'hex');
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, {
-    authTagLength: TAG_LENGTH,
-  });
-
-  const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  const tag = cipher.getAuthTag();
-
-  return [
-    VERSION,
-    fingerprint(hexKey),
-    iv.toString('hex'),
-    tag.toString('hex'),
-    enc.toString('hex'),
-  ].join(SEP);
+function isEmptyPlaintext(plaintext) {
+  if (plaintext === undefined || plaintext === null || plaintext === '') {
+    return true;
+  }
+  return Buffer.isBuffer(plaintext) && plaintext.length === 0;
 }
 
-/**
- * Decrypt an encrypted payload.
- * Tries currentKey first; if the fingerprint doesn't match, tries oldKey (rotation).
- *
- * @param {string} payload   – output of encrypt()
- * @param {string} currentKey
- * @param {string|null} oldKey
- * @returns {{ plaintext: string, rotationNeeded: boolean }}
- */
+function encrypt(plaintext, hexKey) {
+  assertValidHexKey(hexKey);
+  if (isEmptyPlaintext(plaintext)) return '';
+
+  const data = Buffer.isBuffer(plaintext)
+    ? Buffer.from(plaintext)
+    : Buffer.from(String(plaintext), 'utf8');
+  const key = Buffer.from(hexKey, 'hex');
+
+  try {
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv(ALGORITHM, key, iv, {
+      authTagLength: TAG_LENGTH,
+    });
+    const enc = Buffer.concat([cipher.update(data), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return [
+      VERSION,
+      fingerprint(hexKey),
+      iv.toString('hex'),
+      tag.toString('hex'),
+      enc.toString('hex'),
+    ].join(SEP);
+  } catch (_) {
+    throw new Error('Credential encryption failed');
+  } finally {
+    data.fill(0);
+    key.fill(0);
+  }
+}
+
 function decrypt(payload, currentKey, oldKey = null) {
   if (!payload) return { plaintext: '', rotationNeeded: false };
+  assertValidHexKey(currentKey);
+  if (oldKey) assertValidHexKey(oldKey);
 
   const parts = payload.split(SEP);
   if (parts.length !== 5 || parts[0] !== VERSION) {
@@ -67,22 +73,18 @@ function decrypt(payload, currentKey, oldKey = null) {
 
   const [, fp, ivHex, tagHex, cipherHex] = parts;
 
-  const currentFp = fingerprint(currentKey);
-  if (fp === currentFp) {
+  if (fp === fingerprint(currentKey)) {
     return {
       plaintext: _decrypt(cipherHex, ivHex, tagHex, currentKey),
       rotationNeeded: false,
     };
   }
 
-  if (oldKey) {
-    const oldFp = fingerprint(oldKey);
-    if (fp === oldFp) {
-      return {
-        plaintext: _decrypt(cipherHex, ivHex, tagHex, oldKey),
-        rotationNeeded: true,
-      };
-    }
+  if (oldKey && fp === fingerprint(oldKey)) {
+    return {
+      plaintext: _decrypt(cipherHex, ivHex, tagHex, oldKey),
+      rotationNeeded: true,
+    };
   }
 
   throw new Error(
@@ -91,22 +93,28 @@ function decrypt(payload, currentKey, oldKey = null) {
 }
 
 function _decrypt(cipherHex, ivHex, tagHex, hexKey) {
-  const key = Buffer.from(hexKey, 'hex');
   const iv = Buffer.from(ivHex, 'hex');
   const tag = Buffer.from(tagHex, 'hex');
   const cipher = Buffer.from(cipherHex, 'hex');
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, {
-    authTagLength: TAG_LENGTH,
-  });
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(cipher), decipher.final()]).toString(
-    'utf8'
-  );
+
+  if (iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH || cipher.length === 0) {
+    throw new Error('Invalid encrypted payload format');
+  }
+
+  const key = Buffer.from(hexKey, 'hex');
+  try {
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, {
+      authTagLength: TAG_LENGTH,
+    });
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(cipher), decipher.final()]).toString(
+      'utf8'
+    );
+  } finally {
+    key.fill(0);
+  }
 }
 
-/**
- * Check whether a stored payload needs re-encryption under the current key.
- */
 function needsRotation(payload, currentKey) {
   if (!payload) return false;
   const parts = payload.split(SEP);

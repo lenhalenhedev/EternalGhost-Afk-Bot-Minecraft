@@ -2,20 +2,16 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { encrypt } = require('../services/encryption');
-const { validateBotConfig } = require('../utils/validators');
+const { validateBotConfig, validatePort } = require('../utils/validators');
+const { assertNoPollutingKeys } = require('../utils/security');
 const config = require('../config');
 
 /**
  * Builds and validates persisted bot records. Centralising this here keeps the
  * BotManager focused on orchestration and guarantees create and edit share the
- * exact same validation + encryption rules (DRY / single source of truth).
+ * exact same validation, encryption, and hardening rules.
  */
 
-// ─── Per-bot subsystem defaults ─────────────────────────────────────────
-// These mirror the constants in src/bot/antiafk/antiAfkConfig.js,
-// src/bot/combat/combatConfig.js and src/bot/AutoEat.js, and also match the
-// column DEFAULTs in db/schema.sql. They become the per-bot starting point so
-// each bot can later be tuned independently (persisted in its config tables).
 const DEFAULT_ANTIAFK = Object.freeze({
   enabled: true,
   minRadius: 5,
@@ -46,11 +42,21 @@ const DEFAULT_COMBAT = Object.freeze({
   invisibleTimeout: 3000,
 });
 
-/**
- * Validate inputs and build a fresh persisted bot record.
- * @throws if the configuration is invalid.
- */
+function encryptCredential(password) {
+  if (password === undefined || password === null || password === '') {
+    return '';
+  }
+  const buffer = Buffer.from(String(password), 'utf8');
+  try {
+    return encrypt(buffer, config.encryption.key);
+  } finally {
+    buffer.fill(0);
+  }
+}
+
 function buildNewRecord(opts, createdBy) {
+  assertNoPollutingKeys(opts, 'createBot');
+
   const {
     host,
     port,
@@ -59,6 +65,10 @@ function buildNewRecord(opts, createdBy) {
     version,
     autoReconnect = true,
   } = opts;
+
+  if (typeof autoReconnect !== 'boolean') {
+    throw new Error('autoReconnect must be a boolean');
+  }
 
   const validation = validateBotConfig({
     host,
@@ -73,9 +83,9 @@ function buildNewRecord(opts, createdBy) {
   return {
     id: uuidv4(),
     host,
-    port: parseInt(port, 10),
+    port: validatePort(port).value,
     username,
-    encryptedPassword: password ? encrypt(password, config.encryption.key) : '',
+    encryptedPassword: encryptCredential(password),
     version,
     autoReconnect,
     wasRunning: false,
@@ -83,39 +93,48 @@ function buildNewRecord(opts, createdBy) {
     createdAt: now,
     updatedAt: now,
     createdBy,
-    // Per-bot subsystem configuration (persisted in dedicated PG tables).
     antiAfk: { ...DEFAULT_ANTIAFK },
     autoEat: { ...DEFAULT_AUTOEAT },
     combat: { ...DEFAULT_COMBAT },
   };
 }
 
-/**
- * Validate a partial edit against the existing record and return the patch of
- * allowed fields to persist. Username is immutable. The merged config is
- * validated so partial edits cannot bypass checks.
- * @throws if the merged configuration is invalid.
- */
 function buildEditPatch(record, patch) {
+  assertNoPollutingKeys(patch, 'editBot');
+
+  const passwordProvided =
+    Object.prototype.hasOwnProperty.call(patch, 'password') &&
+    patch.password !== undefined &&
+    patch.password !== null;
+
   const merged = {
     host: patch.host !== undefined ? patch.host : record.host,
     port: patch.port !== undefined ? patch.port : record.port,
     username: record.username,
     version: patch.version !== undefined ? patch.version : record.version,
-    password: patch.password !== undefined ? patch.password : '',
   };
+  if (passwordProvided) merged.password = patch.password;
+
   const validation = validateBotConfig(merged);
   if (!validation.valid) throw new Error(validation.errors.join(', '));
 
   const allowed = { updatedAt: new Date().toISOString() };
+
   if (patch.host !== undefined) allowed.host = patch.host;
-  if (patch.port !== undefined) allowed.port = parseInt(patch.port, 10);
+  if (patch.port !== undefined) allowed.port = validatePort(patch.port).value;
   if (patch.version !== undefined) allowed.version = patch.version;
-  if (patch.autoReconnect !== undefined)
-    allowed.autoReconnect = !!patch.autoReconnect;
-  if (patch.password !== undefined && patch.password !== '') {
-    allowed.encryptedPassword = encrypt(patch.password, config.encryption.key);
+
+  if (patch.autoReconnect !== undefined) {
+    if (typeof patch.autoReconnect !== 'boolean') {
+      throw new Error('autoReconnect must be a boolean');
+    }
+    allowed.autoReconnect = patch.autoReconnect;
   }
+
+  if (passwordProvided && merged.password !== '') {
+    allowed.encryptedPassword = encryptCredential(merged.password);
+  }
+
   return allowed;
 }
 
