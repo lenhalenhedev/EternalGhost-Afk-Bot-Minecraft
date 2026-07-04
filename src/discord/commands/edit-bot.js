@@ -3,6 +3,8 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 const { ALIVE_STATES } = require('../../bot/states');
+const { logger } = require('../../services/logger');
+const { safeErrorMessage } = require('../safeError');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -95,7 +97,10 @@ module.exports = {
         ],
       });
     } catch (err) {
-      await interaction.editReply({ embeds: [errorEmbed(err.message)] });
+      logger.error(`[edit-bot] ${err?.stack || err?.message || err}`);
+      await interaction.editReply({
+        embeds: [errorEmbed(safeErrorMessage(err, 'Could not update bot.'))],
+      });
     }
   },
 };

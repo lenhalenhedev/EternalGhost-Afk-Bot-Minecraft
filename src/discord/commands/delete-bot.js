@@ -9,6 +9,8 @@ const {
 } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
+const { logger } = require('../../services/logger');
+const { safeErrorMessage } = require('../safeError');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -91,8 +93,9 @@ module.exports = {
         components: [],
       });
     } catch (err) {
+      logger.error(`[delete-bot] ${err?.stack || err?.message || err}`);
       await interaction.editReply({
-        embeds: [errorEmbed(err.message)],
+        embeds: [errorEmbed(safeErrorMessage(err, 'Could not delete bot.'))],
         components: [],
       });
     }

@@ -2,6 +2,8 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
+const { logger } = require('../../services/logger');
+const { safeErrorMessage } = require('../safeError');
 
 // ── /select-bot ───────────────────────────────────────────────────────────────
 const selectBot = {
@@ -40,7 +42,10 @@ const selectBot = {
         ],
       });
     } catch (err) {
-      await interaction.editReply({ embeds: [errorEmbed(err.message)] });
+      logger.error(`[select-bot] ${err?.stack || err?.message || err}`);
+      await interaction.editReply({
+        embeds: [errorEmbed(safeErrorMessage(err, 'Could not select bot.'))],
+      });
     }
   },
 };

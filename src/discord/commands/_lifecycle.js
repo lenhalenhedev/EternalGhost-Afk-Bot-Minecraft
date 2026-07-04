@@ -2,6 +2,8 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
+const { logger } = require('../../services/logger');
+const { safeErrorMessage } = require('../safeError');
 
 /** Resolve bot: by ID arg → fallback to user selection */
 function resolveBot(interaction) {
@@ -47,7 +49,10 @@ const startCmd = {
         ],
       });
     } catch (err) {
-      await interaction.editReply({ embeds: [errorEmbed(err.message)] });
+      logger.error(`[start] ${err?.stack || err?.message || err}`);
+      await interaction.editReply({
+        embeds: [errorEmbed(safeErrorMessage(err, 'Could not start bot.'))],
+      });
     }
   },
 };
@@ -85,7 +90,10 @@ const stopCmd = {
         ],
       });
     } catch (err) {
-      await interaction.editReply({ embeds: [errorEmbed(err.message)] });
+      logger.error(`[stop] ${err?.stack || err?.message || err}`);
+      await interaction.editReply({
+        embeds: [errorEmbed(safeErrorMessage(err, 'Could not stop bot.'))],
+      });
     }
   },
 };
@@ -120,7 +128,10 @@ const restartCmd = {
         ],
       });
     } catch (err) {
-      await interaction.editReply({ embeds: [errorEmbed(err.message)] });
+      logger.error(`[restart] ${err?.stack || err?.message || err}`);
+      await interaction.editReply({
+        embeds: [errorEmbed(safeErrorMessage(err, 'Could not restart bot.'))],
+      });
     }
   },
 };

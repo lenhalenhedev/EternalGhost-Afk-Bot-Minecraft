@@ -2,6 +2,8 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
+const { logger } = require('../../services/logger');
+const { safeErrorMessage } = require('../safeError');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -77,7 +79,10 @@ module.exports = {
 
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
-      await interaction.editReply({ embeds: [errorEmbed(err.message)] });
+      logger.error(`[create-bot] ${err?.stack || err?.message || err}`);
+      await interaction.editReply({
+        embeds: [errorEmbed(safeErrorMessage(err, 'Could not create bot.'))],
+      });
     }
   },
 };

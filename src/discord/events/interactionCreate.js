@@ -2,6 +2,7 @@
 const { MessageFlags } = require('discord.js');
 const { logger } = require('../../services/logger');
 const { isAdmin } = require('../../utils/validators');
+const { safeErrorMessage } = require('../safeError');
 const config = require('../../config');
 
 module.exports = {
@@ -10,7 +11,7 @@ module.exports = {
   async execute(interaction) {
     if (!interaction.isChatInputCommand()) return;
 
-    // ── Admin guard ───────────────────────────────────────────────────────────
+    // ── Admin guard ───────────────────────────────────────────────────────
     if (!isAdmin(interaction.user.id, config.access.adminIds)) {
       await interaction.reply({
         content: '❌ You do not have permission to use this bot.',
@@ -31,21 +32,18 @@ module.exports = {
     try {
       await command.execute(interaction);
     } catch (err) {
+      // Full detail always goes server-side, regardless of what we show the user.
       logger.error(
-        `[Discord] Command /${interaction.commandName} threw: ${err.message}`
+        `[Discord] Command /${interaction.commandName} threw: ${err?.stack || err?.message || err}`
       );
-      const msg = `❌ Lỗi khi thực thi lệnh: \`${err.message}\``;
+
+      const content = `❌ ${safeErrorMessage(err, 'Something went wrong running that command. This has been logged.')}`;
+
       try {
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({
-            content: msg,
-            flags: MessageFlags.Ephemeral,
-          });
+          await interaction.followUp({ content, flags: MessageFlags.Ephemeral });
         } else {
-          await interaction.reply({
-            content: msg,
-            flags: MessageFlags.Ephemeral,
-          });
+          await interaction.reply({ content, flags: MessageFlags.Ephemeral });
         }
       } catch (_) {
         /* ignore double-reply race */

@@ -4,6 +4,8 @@ const BotManager = require('../../manager/BotManager');
 const { validateChatMessage } = require('../../utils/validators');
 const { successEmbed, errorEmbed } = require('../embeds');
 const { ALIVE_STATES } = require('../../bot/states');
+const { logger } = require('../../services/logger');
+const { safeErrorMessage } = require('../safeError');
 
 // Per-user cooldown: userId -> lastSentTs
 const cooldowns = new Map();
@@ -92,7 +94,10 @@ module.exports = {
         ],
       });
     } catch (err) {
-      await interaction.editReply({ embeds: [errorEmbed(err.message)] });
+      logger.error(`[chat] ${err?.stack || err?.message || err}`);
+      await interaction.editReply({
+        embeds: [errorEmbed(safeErrorMessage(err, 'Could not send message.'))],
+      });
     }
   },
 };
