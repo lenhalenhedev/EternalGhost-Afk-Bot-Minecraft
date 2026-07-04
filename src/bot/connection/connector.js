@@ -3,6 +3,25 @@
 const mineflayer = require('mineflayer');
 const { decrypt } = require('../../services/encryption');
 const config = require('../../config');
+const { logger, botLog } = require('../../services/logger');
+
+const DEFAULT_VIEW_DISTANCE = 4;
+const MIN_VIEW_DISTANCE = 2;
+const MAX_VIEW_DISTANCE = 16;
+
+function resolveViewDistance(botId) {
+  const raw = process.env.MINECRAFT_VIEW_DISTANCE ?? config.limits?.viewDistance;
+  const parsed = parseInt(raw, 10);
+
+  if (!Number.isInteger(parsed) || parsed < MIN_VIEW_DISTANCE || parsed > MAX_VIEW_DISTANCE) {
+    const message = `Invalid viewDistance "${raw}", falling back to ${DEFAULT_VIEW_DISTANCE}`;
+    if (botId) botLog(botId, 'warn', message);
+    else logger.warn(message);
+    return DEFAULT_VIEW_DISTANCE;
+  }
+
+  return parsed;
+}
 
 /**
  * Low-level connection helpers: turning a stored bot record into a live
@@ -34,6 +53,7 @@ function createMineflayerBot(record) {
     auth: 'offline',
     hideErrors: false,
     checkTimeoutInterval: 30_000,
+    viewDistance: resolveViewDistance(record.id),
   });
 }
 
