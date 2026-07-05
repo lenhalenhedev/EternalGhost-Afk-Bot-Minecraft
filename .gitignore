@@ -5,3 +5,4 @@ data/bots.json
 src/discord/embeds.js.bak
 *.log
 *.gz
+package-lock.json
