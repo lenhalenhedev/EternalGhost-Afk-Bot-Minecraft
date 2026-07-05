@@ -3,6 +3,7 @@ const {
   SlashCommandBuilder,
   EmbedBuilder,
   MessageFlags,
+  PermissionFlagsBits,
 } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildListEntry } = require('../embeds');
@@ -13,6 +14,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('list-bot')
     .setDescription('Danh sách tất cả các bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addIntegerOption((o) =>
       o
         .setName('page')

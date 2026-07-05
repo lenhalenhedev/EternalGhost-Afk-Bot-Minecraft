@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildStatusEmbed, errorEmbed } = require('../embeds');
 
@@ -7,6 +11,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('status-bot')
     .setDescription('Xem trạng thái chi tiết của một bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o
         .setName('id')

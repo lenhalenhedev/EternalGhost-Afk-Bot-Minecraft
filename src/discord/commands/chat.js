@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { validateChatMessage } = require('../../utils/validators');
 const { successEmbed, errorEmbed } = require('../embeds');
@@ -18,6 +22,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('chat')
     .setDescription('Gửi tin nhắn vào game Minecraft qua bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o
         .setName('message')

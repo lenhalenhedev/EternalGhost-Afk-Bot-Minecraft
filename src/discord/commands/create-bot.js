@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 const { logger } = require('../../services/logger');
@@ -9,6 +13,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('create-bot')
     .setDescription('Tạo một Minecraft AFK bot mới')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o.setName('host').setDescription('Server IP / hostname').setRequired(true)
     )

@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 const { logger } = require('../../services/logger');
@@ -10,6 +14,7 @@ const selectBot = {
   data: new SlashCommandBuilder()
     .setName('select-bot')
     .setDescription('Chọn bot để điều khiển (dùng cho /start /stop /chat ...)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o
         .setName('id')

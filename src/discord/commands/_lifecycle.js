@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 const { logger } = require('../../services/logger');
@@ -28,6 +32,7 @@ const startCmd = {
   data: new SlashCommandBuilder()
     .setName('start')
     .setDescription('Khởi động bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o
         .setName('id')
@@ -62,6 +67,7 @@ const stopCmd = {
   data: new SlashCommandBuilder()
     .setName('stop')
     .setDescription('Dừng bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o
         .setName('id')
@@ -103,6 +109,7 @@ const restartCmd = {
   data: new SlashCommandBuilder()
     .setName('restart')
     .setDescription('Khởi động lại bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o
         .setName('id')

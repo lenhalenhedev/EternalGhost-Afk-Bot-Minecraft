@@ -3,6 +3,7 @@ const {
   SlashCommandBuilder,
   EmbedBuilder,
   MessageFlags,
+  PermissionFlagsBits,
 } = require('discord.js');
 
 const COMMANDS = [
@@ -63,7 +64,8 @@ const STATE_GUIDE = [
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('help')
-    .setDescription('Hướng dẫn sử dụng Discord Minecraft AFK Bot'),
+    .setDescription('Hướng dẫn sử dụng Discord Minecraft AFK Bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });

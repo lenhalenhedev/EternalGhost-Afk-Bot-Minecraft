@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildStatsEmbed } = require('../embeds');
 
@@ -8,7 +12,8 @@ module.exports = {
     .setName('stats')
     .setDescription(
       'Kiểm tra tình trạng hệ thống (RAM, Uptime, số bot đang chạy)'
-    ),
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     await interaction.deferReply();

@@ -3,6 +3,7 @@ const {
   SlashCommandBuilder,
   AttachmentBuilder,
   MessageFlags,
+  PermissionFlagsBits,
 } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { getBotLogs } = require('../../services/logger');
@@ -14,6 +15,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('logs-bot')
     .setDescription('Xem log gần nhất của bot')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o
         .setName('id')

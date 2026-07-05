@@ -6,6 +6,7 @@ const {
   ButtonStyle,
   ComponentType,
   MessageFlags,
+  PermissionFlagsBits,
 } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
@@ -16,6 +17,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('delete-bot')
     .setDescription('Xóa một bot (sẽ stop bot trước nếu đang chạy)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
       o
         .setName('id')

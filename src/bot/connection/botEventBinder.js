@@ -70,10 +70,17 @@ function bindBotEvents(instance, bot) {
     })
   );
 
-  bot.on('error', (err) => {
-    botLog(instance.id, 'error', `Bot error: ${err?.message ?? 'unknown'}`);
-    instance.emit('botError', err);
-  });
+  bot.on(
+    'error',
+    guard(
+      'error',
+      (err) => {
+        botLog(instance.id, 'error', `Bot error: ${err?.message ?? 'unknown'}`);
+        instance.emit('botError', err);
+      },
+      { terminateOnError: false }
+    )
+  );
 
   bot.on(
     'kicked',
