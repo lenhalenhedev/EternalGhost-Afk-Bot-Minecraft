@@ -11,6 +11,8 @@
  */
 require('dotenv').config();
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 
 function optionalEnv(key, defaultValue = undefined) {
   const v = process.env[key];
@@ -29,15 +31,80 @@ function intEnv(key, defaultValue) {
   return Number.isNaN(n) ? defaultValue : n;
 }
 
-/** Build the pg Pool config from environment variables. */
-function buildPoolConfig() {
-  const connectionString = optionalEnv('DATABASE_URL');
+/**
+ * Safely read a CA certificate file for SSL connections.
+ *
+ * Returns the file contents as a UTF-8 string, or `null` if the path is not
+ * configured, the file does not exist, or it cannot be read for any reason
+ * (permissions, corrupt path, etc). Errors are logged clearly but never
+ * thrown here — callers decide the fallback behaviour.
+ */
+function readSslCertificate(certPath) {
+  if (!certPath) return null;
+
+  const resolvedPath = path.resolve(certPath);
+
+  try {
+    if (!fs.existsSync(resolvedPath)) {
+      console.warn(
+        `[database] DB_SSL_CERT_PATH is set to "${certPath}" but the file was not found at "${resolvedPath}".`
+      );
+      return null;
+    }
+    return fs.readFileSync(resolvedPath, 'utf8');
+  } catch (err) {
+    console.error(
+      `[database] Failed to read SSL certificate at "${resolvedPath}": ${err.message}`
+    );
+    return null;
+  }
+}
+
+/**
+ * Build the `ssl` option for the pg Pool config.
+ *
+ * - DB_SSL=false (default) -> SSL disabled, returns `undefined`.
+ * - DB_SSL=true + no valid DB_SSL_CERT_PATH -> falls back to
+ *   `rejectUnauthorized: false` (works for self-signed certs used by managed
+ *   providers like Supabase/Neon) and logs a warning so this is never silent.
+ * - DB_SSL=true + valid DB_SSL_CERT_PATH -> loads the CA cert and honours
+ *   DB_SSL_REJECT_UNAUTHORIZED for strict certificate validation.
+ */
+function buildSslConfig() {
   const sslEnabled =
     boolEnv('DB_SSL') ||
     /^(require|verify-ca|verify-full)$/i.test(optionalEnv('PGSSLMODE', ''));
-  const ssl = sslEnabled
-    ? { rejectUnauthorized: boolEnv('DB_SSL_REJECT_UNAUTHORIZED', false) }
-    : undefined;
+
+  if (!sslEnabled) return undefined;
+
+  const certPath = optionalEnv('DB_SSL_CERT_PATH');
+  const rejectUnauthorized = boolEnv('DB_SSL_REJECT_UNAUTHORIZED', false);
+  const ca = readSslCertificate(certPath);
+
+  if (!ca) {
+    if (certPath) {
+      // A path was provided but the cert could not be loaded — still fail
+      // open to `rejectUnauthorized: false` so the app can boot, but the
+      // warnings above/below make the misconfiguration impossible to miss.
+      console.warn(
+        '[database] SSL is enabled but the certificate at DB_SSL_CERT_PATH could not be loaded. ' +
+          'Falling back to rejectUnauthorized: false.'
+      );
+    } else {
+      console.warn(
+        '[database] SSL is enabled but DB_SSL_CERT_PATH is missing. Falling back to rejectUnauthorized: false.'
+      );
+    }
+    return { rejectUnauthorized: false };
+  }
+
+  return { ca, rejectUnauthorized };
+}
+
+/** Build the pg Pool config from environment variables. */
+function buildPoolConfig() {
+  const connectionString = optionalEnv('DATABASE_URL');
+  const ssl = buildSslConfig();
 
   const poolTuning = {
     max: intEnv('DB_POOL_MAX', 10),
