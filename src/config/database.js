@@ -107,8 +107,8 @@ function buildPoolConfig() {
   const ssl = buildSslConfig();
 
   const poolTuning = {
-    max: intEnv('DB_POOL_MAX', 10),
-    min: intEnv('DB_POOL_MIN', 0),
+    max: intEnv('DB_POOL_MAX', 2),
+    min: intEnv('DB_POOL_MIN', 1),
     idleTimeoutMillis: intEnv('DB_POOL_IDLE_TIMEOUT_MS', 30_000),
     connectionTimeoutMillis: intEnv('DB_POOL_CONNECTION_TIMEOUT_MS', 10_000),
     // FIX: Enable statement timeout to prevent long-running queries from
