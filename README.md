@@ -184,7 +184,8 @@ EternalGhost-Afk-Bot-Minecraft/
 │   └── utils/
 │       ├── security.js               Prototype-pollution scanner, log sanitizer, strict-int guard
 │       ├── validators.js             Host, port, username, version, password, chat validators
-│       └── helpers.js                Pure utilities: timing, clamping, backoff, formatting
+│       ├── helpers.js                Pure utilities: timing, clamping, backoff, formatting
+│       └── CronJob.js                DB keep-alive ping (every 5h) so managed Postgres never idles out
 └── tests/                            Node.js test suite (80+ tests) and leak-detection kit
 ```
 

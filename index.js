@@ -5,6 +5,7 @@ const { logger, shutdown: shutdownLogger } = require('./src/services/logger');
 const BotManager = require('./src/manager/BotManager');
 const client = require('./src/discord/client');
 const db = require('./src/config/database');
+const dbPingCron = require('./src/utils/CronJob');
 
 let shuttingDown = false;
 let lifecycleHandlersRegistered = false;
@@ -23,6 +24,7 @@ async function shutdown(signal, exitCode = 0) {
   shuttingDown = true;
   logger.info(`[Main] Received ${signal}. Graceful shutdown...`);
   try {
+    dbPingCron.stop();
     await BotManager.shutdown();
     await client.destroy();
     await db.close();
@@ -77,6 +79,9 @@ async function main() {
 
   // Register crash handlers before anything else can throw.
   registerLifecycleHandlers();
+
+  // Keep the (e.g. Aiven) PostgreSQL database from going idle/inactive.
+  dbPingCron.start();
 
   await BotManager.initialize();
   await client.login(config.discord.token);
