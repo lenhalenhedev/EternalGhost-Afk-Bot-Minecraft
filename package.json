@@ -1,6 +1,6 @@
 {
-  "name": "discord-minecraft-afk-bots",
-  "version": "1.0.0",
+  "name": "EternalGhost-Afk-Bot-Minecraft",
+  "version": "2.0.0",
   "description": "Discord-managed multi-Minecraft AFK bot system",
   "main": "index.js",
   "scripts": {
@@ -29,7 +29,7 @@
     "uuid": "^11.1.1"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
