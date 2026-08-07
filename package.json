@@ -14,19 +14,15 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5",
-    "mineflayer": "^4.23.0",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2",
+    "mineflayer": "^4.37.1",
     "mineflayer-pathfinder": "^2.4.5",
-    "node-cron": "^4.0.0",
-    "pg": "^8.11.5",
+    "node-cron": "^4.6.0",
+    "pg": "^8.22.0",
     "uuid": "^11.1.1",
-    "winston": "^3.13.0",
+    "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
-  },
-  "overrides": {
-    "undici": "^6.27.0",
-    "uuid": "^11.1.1"
   },
   "engines": {
     "node": ">=24.0.0"
