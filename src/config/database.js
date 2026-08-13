@@ -11,8 +11,10 @@
  */
 require('dotenv').config();
 const { Pool } = require('pg');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const tls = require('tls');
 
 function optionalEnv(key, defaultValue = undefined) {
   const v = process.env[key];
@@ -31,13 +33,23 @@ function intEnv(key, defaultValue) {
   return Number.isNaN(n) ? defaultValue : n;
 }
 
+function strictBoolEnv(key, defaultValue = false) {
+  const v = optionalEnv(key);
+  if (v === undefined) return defaultValue;
+  if (/^(1|true|yes|on)$/i.test(v)) return true;
+  if (/^(0|false|no|off)$/i.test(v)) return false;
+  throw new Error(
+    `[database] FATAL: ${key} must be explicitly true or false when provided.`
+  );
+}
+
 /**
- * Safely read a CA certificate file for SSL connections.
+ * Read and validate a CA certificate for strict SSL connections.
  *
- * Returns the file contents as a UTF-8 string, or `null` if the path is not
- * configured, the file does not exist, or it cannot be read for any reason
- * (permissions, corrupt path, etc). Errors are logged clearly but never
- * thrown here — callers decide the fallback behaviour.
+ * Returns the PEM contents when the path is a readable regular file containing
+ * a certificate accepted by Node's TLS parser, or `null` otherwise. The caller
+ * is responsible for logging a fatal startup error when strict verification is
+ * enabled.
  */
 function readSslCertificate(certPath) {
   if (!certPath) return null;
@@ -45,17 +57,23 @@ function readSslCertificate(certPath) {
   const resolvedPath = path.resolve(certPath);
 
   try {
-    if (!fs.existsSync(resolvedPath)) {
-      console.warn(
-        `[database] DB_SSL_CERT_PATH is set to "${certPath}" but the file was not found at "${resolvedPath}".`
-      );
-      return null;
+    const stat = fs.statSync(resolvedPath);
+    if (!stat.isFile()) return null;
+
+    const ca = fs.readFileSync(resolvedPath, 'utf8');
+    const certificatePattern =
+      /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
+    const certificates = ca.match(certificatePattern);
+    if (!certificates || ca.replace(certificatePattern, '').trim()) return null;
+
+    // Node's TLS context ignores unrecognised CA text, so parse every PEM
+    // certificate explicitly before allowing Pool construction.
+    for (const certificate of certificates) {
+      new crypto.X509Certificate(certificate);
     }
-    return fs.readFileSync(resolvedPath, 'utf8');
-  } catch (err) {
-    console.error(
-      `[database] Failed to read SSL certificate at "${resolvedPath}": ${err.message}`
-    );
+    tls.createSecureContext({ ca });
+    return ca;
+  } catch {
     return null;
   }
 }
@@ -64,41 +82,40 @@ function readSslCertificate(certPath) {
  * Build the `ssl` option for the pg Pool config.
  *
  * - DB_SSL=false (default) -> SSL disabled, returns `undefined`.
- * - DB_SSL=true + no valid DB_SSL_CERT_PATH -> falls back to
- *   `rejectUnauthorized: false` (works for self-signed certs used by managed
- *   providers like Supabase/Neon) and logs a warning so this is never silent.
- * - DB_SSL=true + valid DB_SSL_CERT_PATH -> loads the CA cert and honours
- *   DB_SSL_REJECT_UNAUTHORIZED for strict certificate validation.
+ * - Strict mode (`DB_SSL_REJECT_UNAUTHORIZED=true`) -> a readable, parseable
+ *   CA certificate is mandatory and invalid configuration aborts startup.
+ * - In non-strict mode (`DB_SSL_REJECT_UNAUTHORIZED=false`) the CA path is
+ *   deliberately ignored and certificate verification remains disabled.
  */
 function buildSslConfig() {
   const sslEnabled =
     boolEnv('DB_SSL') ||
     /^(require|verify-ca|verify-full)$/i.test(optionalEnv('PGSSLMODE', ''));
+  const rejectUnauthorized = strictBoolEnv('DB_SSL_REJECT_UNAUTHORIZED', false);
+
+  if (rejectUnauthorized) {
+    const certPath = optionalEnv('DB_SSL_CERT_PATH');
+    const ca = readSslCertificate(certPath);
+    if (!ca) {
+      console.error(
+        '[database] FATAL: DB_SSL_REJECT_UNAUTHORIZED=true requires ' +
+          'DB_SSL_CERT_PATH to reference a readable, valid CA certificate. ' +
+          'Database startup aborted before creating the connection pool.'
+      );
+      throw new Error(
+        'Strict database TLS is enabled, but DB_SSL_CERT_PATH is missing or invalid.'
+      );
+    }
+
+    // Validate the strict configuration even when DB_SSL is separately off;
+    // no SSL option is passed to pg until the transport is explicitly enabled.
+    return sslEnabled ? { ca, rejectUnauthorized: true } : undefined;
+  }
 
   if (!sslEnabled) return undefined;
 
-  const certPath = optionalEnv('DB_SSL_CERT_PATH');
-  const rejectUnauthorized = boolEnv('DB_SSL_REJECT_UNAUTHORIZED', false);
-  const ca = readSslCertificate(certPath);
-
-  if (!ca) {
-    if (certPath) {
-      // A path was provided but the cert could not be loaded — still fail
-      // open to `rejectUnauthorized: false` so the app can boot, but the
-      // warnings above/below make the misconfiguration impossible to miss.
-      console.warn(
-        '[database] SSL is enabled but the certificate at DB_SSL_CERT_PATH could not be loaded. ' +
-          'Falling back to rejectUnauthorized: false.'
-      );
-    } else {
-      console.warn(
-        '[database] SSL is enabled but DB_SSL_CERT_PATH is missing. Falling back to rejectUnauthorized: false.'
-      );
-    }
-    return { rejectUnauthorized: false };
-  }
-
-  return { ca, rejectUnauthorized };
+  // Non-strict mode deliberately ignores DB_SSL_CERT_PATH.
+  return { rejectUnauthorized: false };
 }
 
 /** Build the pg Pool config from environment variables. */
