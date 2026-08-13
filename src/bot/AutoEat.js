@@ -53,7 +53,10 @@ function resolveAutoEatConfig(cfg) {
   const source = cfg && typeof cfg === 'object' ? cfg : {};
   return Object.freeze({
     enabled: source.enabled !== false,
-    eatThreshold: intOr(source.eatThreshold, EAT_THRESHOLD, { min: 0, max: 20 }),
+    eatThreshold: intOr(source.eatThreshold, EAT_THRESHOLD, {
+      min: 0,
+      max: 20,
+    }),
     eatCooldown: intOr(source.eatCooldown, EAT_COOLDOWN, { min: 0 }),
     checkInterval: intOr(source.checkInterval, CHECK_INTERVAL, { min: 1 }),
   });

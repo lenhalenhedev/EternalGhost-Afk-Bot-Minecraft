@@ -1,6 +1,5 @@
 node_modules/
 .env
 logs/
-data/bots.json
 *.log
 *.gz

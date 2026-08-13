@@ -58,8 +58,14 @@ function bindBotEvents(instance, bot) {
     'message',
     guard('message', (jsonMsg) => onServerMessage(instance, jsonMsg))
   );
-  bot.on('health', guard('health', () => onHealth(instance, bot)));
-  bot.on('death', guard('death', () => onDeath(instance, bot)));
+  bot.on(
+    'health',
+    guard('health', () => onHealth(instance, bot))
+  );
+  bot.on(
+    'death',
+    guard('death', () => onDeath(instance, bot))
+  );
 
   bot.on(
     'playerCollect',
@@ -120,15 +126,11 @@ function makeGuard(instance, bot) {
         const result = fn(...args);
         if (result && typeof result.then === 'function') {
           result.catch(() => {
-            botLog(
-              instance.id,
-              'error',
-              `Async handler failure in "${label}"`
-            );
+            botLog(instance.id, 'error', `Async handler failure in "${label}"`);
             if (terminateOnError) safeEnd(bot);
           });
         }
-      } catch (_) {
+      } catch {
         botLog(
           instance.id,
           'error',
@@ -143,7 +145,7 @@ function makeGuard(instance, bot) {
 function safeEnd(bot) {
   try {
     bot.end();
-  } catch (_) {
+  } catch {
     /* ignore */
   }
 }
@@ -235,7 +237,7 @@ function onDeath(instance, bot) {
   if (instance._sub?.antiAFK) instance._sub.antiAFK.stop();
   try {
     bot.pathfinder?.setGoal(null);
-  } catch (_) {
+  } catch {
     /* ignore */
   }
 
@@ -254,7 +256,7 @@ function onDeath(instance, bot) {
   if (instance._respawnHandler) {
     try {
       bot.removeListener('spawn', instance._respawnHandler);
-    } catch (_) {
+    } catch {
       /* ignore */
     }
     instance._respawnHandler = null;

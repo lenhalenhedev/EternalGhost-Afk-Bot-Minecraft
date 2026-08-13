@@ -1,24 +1,10 @@
 'use strict';
 /**
- * PostgreSQL-backed persistence layer (Facade).
+ * PostgreSQL-backed persistence facade.
  *
- * STRUCTURAL REFACTOR (SRP): row mapping and raw repository queries have
- * been extracted into sibling modules so this file is left holding only
- * what actually needs to be a single cohesive unit — the in-memory state,
- * the write-behind queue/transaction orchestration, and the public API
- * that BotManager and other callers depend on. No public method name,
- * signature, or export shape has changed.
- *
- *   - src/manager/persistenceHelpers.js -> row <-> record mappers, indexBy
- *   - src/manager/botRepository.js      -> raw INSERT/UPDATE/DELETE queries
- *
- * MEMORY LEAK / PERFORMANCE FIXES (unchanged from before the split):
- * - _writeChain is bounded: if too many tasks accumulate (e.g., DB is slow),
- *   new writes are dropped with a warning instead of building an unbounded chain
- * - _pending counter accurately tracks in-flight operations
- * - Error handling in _enqueueTask prevents unhandled promise rejections from
- *   breaking the chain (which would cause all subsequent writes to silently fail)
- * - flush() has a timeout to prevent hanging indefinitely on shutdown
+ * Keeps in-memory state synchronized with PostgreSQL through ordered,
+ * write-behind transactions. Row mapping and raw queries live in sibling
+ * modules to keep this class focused on state and orchestration.
  */
 const db = require('../config/database');
 const { logger } = require('../services/logger');
@@ -32,7 +18,6 @@ const {
 const { recordFromRow, indexBy } = require('./persistenceHelpers');
 const botRepository = require('./botRepository');
 
-// FIX: Maximum pending writes before we start dropping (backpressure)
 const MAX_PENDING_WRITES = 500;
 const FLUSH_TIMEOUT_MS = 10_000;
 
@@ -243,10 +228,6 @@ class Persistence {
       }, FLUSH_TIMEOUT_MS)
     );
     await Promise.race([this._writeChain, timeoutPromise]);
-  }
-
-  flushSync() {
-    return this.flush();
   }
 
   // ─── Internal helpers ─────────────────────────────────────────

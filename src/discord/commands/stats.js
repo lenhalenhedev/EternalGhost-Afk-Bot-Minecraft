@@ -1,9 +1,5 @@
 'use strict';
-const {
-  SlashCommandBuilder,
-  MessageFlags,
-  PermissionFlagsBits,
-} = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildStatsEmbed } = require('../embeds');
 

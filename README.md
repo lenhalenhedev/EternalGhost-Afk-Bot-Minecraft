@@ -122,7 +122,6 @@ Credential encryption uses **AES-256-GCM**, an authenticated cipher that guarant
 EternalGhost-Afk-Bot-Minecraft/
 ├── Dockerfile
 ├── LICENSE
-├── POSTGRES_MIGRATION.md
 ├── db
 │   └── schema.sql
 ├── deploy-commands.js
@@ -131,8 +130,6 @@ EternalGhost-Afk-Bot-Minecraft/
 ├── index.js
 ├── package-lock.json
 ├── package.json
-├── scripts
-│   └── migrateJsonToPg.js
 ├── src
 │   ├── bot
 │   │   ├── AntiAFK.js
@@ -226,12 +223,12 @@ EternalGhost-Afk-Bot-Minecraft/
 
 ### Prerequisites
 
-| Requirement    | Version / Notes                                             |
-| -------------- | ---------------------------------------------------------- |
-| Node.js        | `>= 24.0.0` (LTS recommended; native test runner required) |
-| npm            | `>= 12.0.0` (bundled with Node.js 24)                          |
-| PostgreSQL     | `>= 16+` reachable via `DATABASE_URL` or discrete `PG*` vars |
-| Discord App    | Bot token, application (client) ID, and a target guild     |
+| Requirement | Version / Notes                                              |
+| ----------- | ------------------------------------------------------------ |
+| Node.js     | `>= 24.0.0` (LTS recommended; native test runner required)   |
+| npm         | `>= 12.0.0` (bundled with Node.js 24)                        |
+| PostgreSQL  | `>= 16+` reachable via `DATABASE_URL` or discrete `PG*` vars |
+| Discord App | Bot token, application (client) ID, and a target guild       |
 
 ### 1. Clone the repository
 
@@ -264,8 +261,6 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 npm run db:schema
 ```
 
-> If migrating from a legacy JSON store, run `npm run db:migrate` after configuring `DATA_FILE`.
-
 ### 5. Register Discord slash commands
 
 ```bash
@@ -294,58 +289,57 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 
 ### Discord
 
-| Variable                    | Required | Description                                                       |
-| --------------------------- | :------: | ---------------------------------------------------------------- |
-| `DISCORD_TOKEN`             |   Yes    | Bot token used to authenticate the gateway connection.           |
-| `DISCORD_CLIENT_ID`         |   Yes    | Application (client) ID used for slash-command registration.     |
-| `DISCORD_GUILD_ID`          |    No    | Target guild for instant command registration; empty = global.  |
-| `DISCORD_ALERT_CHANNEL_ID`  |    No    | Channel receiving per-bot system alerts.                         |
-| `DISCORD_AUDIT_CHANNEL_ID`  |    No    | Channel receiving audit entries for create/edit/delete actions.  |
-| `DISCORD_LOG_CHANNEL_ID`    |    No    | Channel receiving bug/error log summaries.                       |
+| Variable                   | Required | Description                                                     |
+| -------------------------- | :------: | --------------------------------------------------------------- |
+| `DISCORD_TOKEN`            |   Yes    | Bot token used to authenticate the gateway connection.          |
+| `DISCORD_CLIENT_ID`        |   Yes    | Application (client) ID used for slash-command registration.    |
+| `DISCORD_GUILD_ID`         |    No    | Target guild for instant command registration; empty = global.  |
+| `DISCORD_ALERT_CHANNEL_ID` |    No    | Channel receiving per-bot system alerts.                        |
+| `DISCORD_AUDIT_CHANNEL_ID` |    No    | Channel receiving audit entries for create/edit/delete actions. |
+| `DISCORD_LOG_CHANNEL_ID`   |    No    | Channel receiving bug/error log summaries.                      |
 
 ### Access Control
 
-| Variable          | Required | Description                                                                 |
-| ----------------- | :------: | -------------------------------------------------------------------------- |
-| `ADMIN_USER_IDS`  |   Yes    | Comma-separated Discord user IDs permitted to invoke commands (no spaces).  |
+| Variable         | Required | Description                                                                |
+| ---------------- | :------: | -------------------------------------------------------------------------- |
+| `ADMIN_USER_IDS` |   Yes    | Comma-separated Discord user IDs permitted to invoke commands (no spaces). |
 
 ### Encryption & Key Rotation
 
-| Variable              | Required | Description                                                                                          |
-| --------------------- | :------: | -------------------------------------------------------------------------------------------------- |
-| `ENCRYPTION_KEY`      |   Yes    | 64-character hex string (32 bytes) for the active AES-256-GCM key. Validated strictly on boot.       |
-| `OLD_ENCRYPTION_KEY`  |    No    | Previous 64-character hex key. When set, stored passwords are auto-re-encrypted under the new key.   |
+| Variable             | Required | Description                                                                                        |
+| -------------------- | :------: | -------------------------------------------------------------------------------------------------- |
+| `ENCRYPTION_KEY`     |   Yes    | 64-character hex string (32 bytes) for the active AES-256-GCM key. Validated strictly on boot.     |
+| `OLD_ENCRYPTION_KEY` |    No    | Previous 64-character hex key. When set, stored passwords are auto-re-encrypted under the new key. |
 
 > **Rotation logic.** To rotate keys, generate a new `ENCRYPTION_KEY`, move the current value to `OLD_ENCRYPTION_KEY`, and restart. On boot, `BotManager` detects payloads whose fingerprint matches `OLD_ENCRYPTION_KEY`, transparently decrypts them, and re-encrypts under the new active key. Once all records report zero rotations remaining, `OLD_ENCRYPTION_KEY` may be removed.
 
 ### Database (PostgreSQL)
 
-| Variable                          | Required | Description                                                            |
-| --------------------------------- | :------: | -------------------------------------------------------------------- |
-| `DATABASE_URL`                    |    No*   | Full connection string; takes precedence over discrete `PG*` values. |
-| `PGHOST` / `PGPORT`               |    No*   | Host and port (used when `DATABASE_URL` is empty).                    |
-| `PGUSER` / `PGPASSWORD`           |    No*   | Database credentials.                                                 |
-| `PGDATABASE`                      |    No*   | Target database name.                                                 |
-| `DB_SSL`                          |    No    | Set `true` to enable TLS for managed Postgres providers.             |
-| `DB_SSL_REJECT_UNAUTHORIZED`      |    No    | Set `false` to accept self-signed certificates.                     |
-| `DB_POOL_MAX` / `DB_POOL_MIN`     |    No    | Connection-pool sizing.                                              |
-| `DB_POOL_IDLE_TIMEOUT_MS`         |    No    | Idle connection eviction timeout.                                    |
-| `DB_POOL_CONNECTION_TIMEOUT_MS`   |    No    | Connection acquisition timeout.                                     |
+| Variable                        | Required | Description                                                          |
+| ------------------------------- | :------: | -------------------------------------------------------------------- |
+| `DATABASE_URL`                  |   No*    | Full connection string; takes precedence over discrete `PG*` values. |
+| `PGHOST` / `PGPORT`             |   No*    | Host and port (used when `DATABASE_URL` is empty).                   |
+| `PGUSER` / `PGPASSWORD`         |   No*    | Database credentials.                                                |
+| `PGDATABASE`                    |   No*    | Target database name.                                                |
+| `DB_SSL`                        |    No    | Set `true` to enable TLS for managed Postgres providers.             |
+| `DB_SSL_REJECT_UNAUTHORIZED`    |    No    | Set `false` to accept self-signed certificates.                      |
+| `DB_POOL_MAX` / `DB_POOL_MIN`   |    No    | Connection-pool sizing.                                              |
+| `DB_POOL_IDLE_TIMEOUT_MS`       |    No    | Idle connection eviction timeout.                                    |
+| `DB_POOL_CONNECTION_TIMEOUT_MS` |    No    | Connection acquisition timeout.                                      |
 
 > *At least one of `DATABASE_URL` or the discrete `PG*` set must be provided.
 
 ### Storage & Operational Limits
 
-| Variable                    | Default            | Description                                                     |
-| --------------------------- | ------------------ | ------------------------------------------------------------- |
-| `DATA_FILE`                 | `./data/bots.json` | Legacy JSON path used only by the migration script.           |
-| `LOG_DIR`                   | `./logs`           | Directory for rotating log files.                            |
-| `LOG_LEVEL`                 | `info`             | Winston log level.                                          |
-| `MAX_BOTS`                  | `50`               | Maximum concurrent bot instances.                          |
-| `BOT_QUEUE_SIZE`            | `100`              | Per-bot task-queue depth.                                   |
-| `BOT_QUEUE_TIMEOUT`         | `10000`            | Per-task timeout in milliseconds.                          |
-| `LOG_SUMMARY_INTERVAL_MIN`  | `15`               | Discord log-summary cadence in minutes (bounded 10–30).     |
-| `MINECRAFT_VIEW_DISTANCE`   | `4`                | Requested chunk view distance (bounded 2–16).              |
+| Variable                   | Default  | Description                                             |
+| -------------------------- | -------- | ------------------------------------------------------- |
+| `LOG_DIR`                  | `./logs` | Directory for rotating log files.                       |
+| `LOG_LEVEL`                | `info`   | Winston log level.                                      |
+| `MAX_BOTS`                 | `50`     | Maximum concurrent bot instances.                       |
+| `BOT_QUEUE_SIZE`           | `100`    | Per-bot task-queue depth.                               |
+| `BOT_QUEUE_TIMEOUT`        | `10000`  | Per-task timeout in milliseconds.                       |
+| `LOG_SUMMARY_INTERVAL_MIN` | `15`     | Discord log-summary cadence in minutes (bounded 10–30). |
+| `MINECRAFT_VIEW_DISTANCE`  | `4`      | Requested chunk view distance (bounded 2–16).           |
 
 ---
 
@@ -353,21 +347,21 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 
 All commands are ephemeral, administrator-gated, and respond with structured embeds.
 
-| Command        | Options                                                | Description                                                             |
-| -------------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
-| `/create-bot`  | `host`, `port`, `username`, `version`, `password?`, `auto-reconnect?` | Creates and persists a new validated bot record.        |
-| `/edit-bot`    | `id`, `host?`, `port?`, `version?`, `password?`, `auto-reconnect?`    | Applies a partial, validated patch to an existing record.|
-| `/delete-bot`  | `id`                                                  | Destroys the instance, clears in-memory state, and removes the record. |
-| `/start`       | `id`                                                  | Starts a bot and marks it as running for auto-restart.                 |
-| `/stop`        | `id`, `force?`                                        | Stops a bot and clears the running flag.                              |
-| `/restart`     | `id`                                                  | Stops, pauses briefly, and restarts a bot.                           |
-| `/chat`        | `message`, `id?`                                      | Relays a validated chat message or whitelisted in-game command.       |
-| `/list-bot`    | `page?`                                               | Lists registered bots with pagination.                               |
-| `/status-bot`  | `id`                                                  | Shows detailed live status for a single bot.                         |
-| `/stats`       | —                                                     | Displays aggregate fleet statistics.                                |
-| `/logs-bot`    | `id`, `lines?`, `hours?`, `level?`                    | Returns recent buffered logs filtered by count, age, and level.       |
-| `/select-bot`  | `id`                                                  | Sets the caller's default bot for commands that omit `id`.            |
-| `/help`        | —                                                     | Lists available commands and usage.                                 |
+| Command       | Options                                                               | Description                                                            |
+| ------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `/create-bot` | `host`, `port`, `username`, `version`, `password?`, `auto-reconnect?` | Creates and persists a new validated bot record.                       |
+| `/edit-bot`   | `id`, `host?`, `port?`, `version?`, `password?`, `auto-reconnect?`    | Applies a partial, validated patch to an existing record.              |
+| `/delete-bot` | `id`                                                                  | Destroys the instance, clears in-memory state, and removes the record. |
+| `/start`      | `id`                                                                  | Starts a bot and marks it as running for auto-restart.                 |
+| `/stop`       | `id`, `force?`                                                        | Stops a bot and clears the running flag.                               |
+| `/restart`    | `id`                                                                  | Stops, pauses briefly, and restarts a bot.                             |
+| `/chat`       | `message`, `id?`                                                      | Relays a validated chat message or whitelisted in-game command.        |
+| `/list-bot`   | `page?`                                                               | Lists registered bots with pagination.                                 |
+| `/status-bot` | `id`                                                                  | Shows detailed live status for a single bot.                           |
+| `/stats`      | —                                                                     | Displays aggregate fleet statistics.                                   |
+| `/logs-bot`   | `id`, `lines?`, `hours?`, `level?`                                    | Returns recent buffered logs filtered by count, age, and level.        |
+| `/select-bot` | `id`                                                                  | Sets the caller's default bot for commands that omit `id`.             |
+| `/help`       | —                                                                     | Lists available commands and usage.                                    |
 
 > **Chat safety.** The `/chat` command enforces a 200-character limit, a per-user cooldown, control-character rejection, and an in-game command whitelist (`/register`, `/login`, `/spawn`, `/home`, `/back`). Non-whitelisted slash commands are refused.
 
@@ -381,7 +375,7 @@ All commands are ephemeral, administrator-gated, and respond with structured emb
 
 1. **Prototype-pollution scan.** The incoming `patch` is recursively scanned; presence of `__proto__`, `constructor`, or `prototype` as own keys aborts the operation.
 2. **Explicit-presence detection.** A field is considered "provided" only when it is an own property of `patch` and is neither `undefined` nor `null`.
-3. **Validated merge.** The patch is merged onto the existing record and the *merged* configuration is fully re-validated, so a partial edit cannot produce an invalid combined state. The immutable `username` is always sourced from the existing record.
+3. **Validated merge.** The patch is merged onto the existing record and the _merged_ configuration is fully re-validated, so a partial edit cannot produce an invalid combined state. The immutable `username` is always sourced from the existing record.
 4. **Allowlisted output.** Only recognized fields (`host`, `port`, `version`, `autoReconnect`, `encryptedPassword`, `updatedAt`) are emitted. Ports pass strict integer validation; `autoReconnect` is rejected unless it is a genuine boolean.
 
 ### Password preservation (the mutation-bug fix)
@@ -397,11 +391,11 @@ const passwordProvided =
   patch.password !== null;
 ```
 
-| Scenario                             | Behavior                                                                 |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| `password` absent from patch          | Existing `encryptedPassword` is untouched and preserved.               |
-| `password` present and non-empty      | Validated, encrypted via a zeroized buffer, and written to the record. |
-| `password` present and empty string   | Validated as an intentional offline credential; no ciphertext written. |
+| Scenario                            | Behavior                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| `password` absent from patch        | Existing `encryptedPassword` is untouched and preserved.               |
+| `password` present and non-empty    | Validated, encrypted via a zeroized buffer, and written to the record. |
+| `password` present and empty string | Validated as an intentional offline credential; no ciphertext written. |
 
 When a new password is supplied, it is converted to a `Buffer`, encrypted, and the buffer is wiped with `.fill(0)` in a `finally` block so the plaintext never lingers in memory.
 

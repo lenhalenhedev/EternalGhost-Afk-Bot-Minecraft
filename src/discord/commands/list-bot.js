@@ -2,7 +2,6 @@
 const {
   SlashCommandBuilder,
   EmbedBuilder,
-  MessageFlags,
   PermissionFlagsBits,
 } = require('discord.js');
 const BotManager = require('../../manager/BotManager');

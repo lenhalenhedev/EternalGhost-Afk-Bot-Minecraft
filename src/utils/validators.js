@@ -51,6 +51,8 @@ const SUPPORTED_VERSIONS = new Set([
 ]);
 
 const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
+// Intentional: this validator must reject ASCII control characters.
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
 const NON_ASCII_RE = /[^\u0020-\u007e]/;
 const DOTTED_QUAD_RE = /^\d+\.\d+\.\d+\.\d+$/;

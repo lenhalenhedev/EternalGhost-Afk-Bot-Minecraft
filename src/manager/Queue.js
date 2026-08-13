@@ -94,7 +94,7 @@ class Queue {
       const { reject } = this._queue.shift();
       try {
         reject(new Error('Queue drained'));
-      } catch (_) {
+      } catch {
         /* ignore if reject handler throws */
       }
     }

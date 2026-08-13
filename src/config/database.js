@@ -148,7 +148,7 @@ pool.on('error', (err) => {
   try {
     const { logger } = require('../services/logger');
     logger.error(`[database] Idle client error: ${err.message}`);
-  } catch (_) {
+  } catch {
     console.error('[database] Idle client error:', err.message);
   }
 });
@@ -180,7 +180,7 @@ async function withTransaction(fn) {
     if (!committed) {
       try {
         await client.query('ROLLBACK');
-      } catch (_) {
+      } catch {
         /* ignore rollback errors */
       }
     }

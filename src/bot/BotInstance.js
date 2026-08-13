@@ -188,7 +188,7 @@ class BotInstance extends EventEmitter {
     if (this._abort) {
       try {
         this._abort.abort();
-      } catch (_) {
+      } catch {
         /* ignore */
       }
       this._abort = null;
@@ -199,20 +199,20 @@ class BotInstance extends EventEmitter {
     if (this._bot) {
       try {
         this._bot.pathfinder?.setGoal(null);
-      } catch (_) {
+      } catch {
         /* ignore */
       }
       if (this._respawnHandler) {
         try {
           this._bot.removeListener('spawn', this._respawnHandler);
-        } catch (_) {
+        } catch {
           /* ignore */
         }
       }
       try {
         this._bot.removeAllListeners();
         this._bot.end();
-      } catch (_) {
+      } catch {
         /* ignore */
       }
       this._bot = null;
@@ -227,7 +227,7 @@ class BotInstance extends EventEmitter {
     if (this._bot) {
       try {
         this._bot.quit(reason);
-      } catch (_) {
+      } catch {
         /* ignore */
       }
     }

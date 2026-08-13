@@ -2,9 +2,9 @@
 --  PostgreSQL schema for the Discord-managed Minecraft AFK bot system
 -- ----------------------------------------------------------------------------
 --  Design notes
---  * One "bots" row per managed bot (the equivalent of the old bots.json
---    record). Sensitive credentials stay encrypted at the application layer
---    (AES-256-GCM); the DB only ever stores the opaque ciphertext payload.
+--  * One "bots" row per managed bot. Sensitive credentials stay encrypted at
+--    the application layer (AES-256-GCM); the DB only ever stores the opaque
+--    ciphertext payload.
 --  * Per-bot subsystem tuning lives in dedicated 1:1 config tables
 --    (anti-AFK / auto-eat / combat) so each subsystem can evolve independently
 --    without bloating the core row.

@@ -10,7 +10,9 @@ const HEX_KEY_RE = /^[0-9a-fA-F]{64}$/;
 
 function assertValidHexKey(hexKey) {
   if (typeof hexKey !== 'string' || !HEX_KEY_RE.test(hexKey)) {
-    throw new Error('Encryption key must be a 64-character hex string (32 bytes)');
+    throw new Error(
+      'Encryption key must be a 64-character hex string (32 bytes)'
+    );
   }
 }
 
@@ -53,8 +55,8 @@ function encrypt(plaintext, hexKey) {
       tag.toString('hex'),
       enc.toString('hex'),
     ].join(SEP);
-  } catch (_) {
-    throw new Error('Credential encryption failed');
+  } catch (err) {
+    throw new Error('Credential encryption failed', { cause: err });
   } finally {
     data.fill(0);
     key.fill(0);
@@ -97,7 +99,11 @@ function _decrypt(cipherHex, ivHex, tagHex, hexKey) {
   const tag = Buffer.from(tagHex, 'hex');
   const cipher = Buffer.from(cipherHex, 'hex');
 
-  if (iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH || cipher.length === 0) {
+  if (
+    iv.length !== IV_LENGTH ||
+    tag.length !== TAG_LENGTH ||
+    cipher.length === 0
+  ) {
     throw new Error('Invalid encrypted payload format');
   }
 

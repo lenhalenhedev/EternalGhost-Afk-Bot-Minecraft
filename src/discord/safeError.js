@@ -12,7 +12,10 @@ function isSafeOperationalError(err) {
   return err instanceof Error && err.constructor === Error && !!err.message;
 }
 
-function safeErrorMessage(err, fallback = 'Something went wrong. This has been logged.') {
+function safeErrorMessage(
+  err,
+  fallback = 'Something went wrong. This has been logged.'
+) {
   return isSafeOperationalError(err) ? err.message : fallback;
 }
 

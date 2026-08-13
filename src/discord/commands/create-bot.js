@@ -64,7 +64,7 @@ module.exports = {
       interaction.options.getBoolean('auto-reconnect') ?? true;
 
     try {
-      const { id, record } = await BotManager.createBot(
+      const { id } = await BotManager.createBot(
         { host, port, username, password, version, autoReconnect },
         interaction.user.id
       );

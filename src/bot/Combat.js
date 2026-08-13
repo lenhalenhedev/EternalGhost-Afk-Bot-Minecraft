@@ -1,7 +1,10 @@
 'use strict';
 const { goals } = require('mineflayer-pathfinder');
 const { botLog } = require('../services/logger');
-const { ATTACK_WHITELIST, resolveCombatConfig } = require('./combat/combatConfig');
+const {
+  ATTACK_WHITELIST,
+  resolveCombatConfig,
+} = require('./combat/combatConfig');
 const { equipBestWeapon } = require('./combat/weapons');
 
 const FLYING_MOBS = new Set(['phantom', 'vex', 'ghast', 'blaze', 'bee']);
@@ -148,7 +151,7 @@ class Combat {
     if (dist <= this.cfg.engageRange && verticalGap <= VERTICAL_ENGAGE_LIMIT) {
       try {
         bot.attack(entity);
-      } catch (_) {
+      } catch {
         /* entity might have disappeared */
       }
     } else if (this._isFlying(entity) && verticalGap > VERTICAL_ENGAGE_LIMIT) {
@@ -170,7 +173,7 @@ class Combat {
     try {
       this.bot.pathfinder.setGoal(new goals.GoalFollow(entity, 2), true);
       this._goalActive = true;
-    } catch (_) {
+    } catch {
       /* pathfinder not available */
     }
   }
@@ -180,7 +183,7 @@ class Combat {
     this._goalActive = false;
     try {
       this.bot.pathfinder.setGoal(null);
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   }
@@ -202,7 +205,7 @@ class Combat {
         false
       );
       this._goalActive = true;
-    } catch (_) {
+    } catch {
       this._clearPath();
     }
   }
@@ -246,7 +249,7 @@ class Combat {
     this._goalActive = false;
     try {
       this.bot.pathfinder.setGoal(null);
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   }

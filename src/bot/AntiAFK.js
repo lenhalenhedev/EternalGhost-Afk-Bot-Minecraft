@@ -50,7 +50,7 @@ class AntiAFK {
     this._rotTimer = null;
     try {
       this.bot.pathfinder.setGoal(null);
-    } catch (_) {
+    } catch {
       /* ignore */
     }
     this._moving = false;
@@ -119,7 +119,7 @@ class AntiAFK {
         this.cfg.moveTimeout,
         'Anchor return'
       );
-    } catch (_) {
+    } catch {
       botLog(
         this.botId,
         'warn',
@@ -137,7 +137,7 @@ class AntiAFK {
         const yaw = randFloat(-Math.PI, Math.PI);
         const pitch = randFloat(-0.3, 0.3);
         this.bot.look(yaw, pitch, false);
-      } catch (_) {
+      } catch {
         /* ignore */
       }
     }, this.cfg.rotationInterval);
@@ -150,7 +150,7 @@ class AntiAFK {
     this._rotTimer = null;
     try {
       this.bot.pathfinder.setGoal(null);
-    } catch (_) {
+    } catch {
       /* ignore */
     }
     this._moving = false;

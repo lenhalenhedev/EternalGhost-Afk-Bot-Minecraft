@@ -8,7 +8,6 @@
     "dev": "node --watch index.js",
     "test": "node --test",
     "db:schema": "psql \"$DATABASE_URL\" -f db/schema.sql",
-    "db:migrate": "node scripts/migrateJsonToPg.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write ."

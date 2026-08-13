@@ -11,7 +11,8 @@ const MIN_VIEW_DISTANCE = 2;
 const MAX_VIEW_DISTANCE = 16;
 
 function resolveViewDistance(botId) {
-  const raw = process.env.MINECRAFT_VIEW_DISTANCE ?? config.limits?.viewDistance;
+  const raw =
+    process.env.MINECRAFT_VIEW_DISTANCE ?? config.limits?.viewDistance;
   const parsed = strictInt(raw, {
     min: MIN_VIEW_DISTANCE,
     max: MAX_VIEW_DISTANCE,

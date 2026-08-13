@@ -83,11 +83,9 @@ function resolveCombatConfig(cfg) {
     attackInterval: intOr(source.attackInterval, COMBAT.ATTACK_INTERVAL, {
       min: 1,
     }),
-    invisibleTimeout: intOr(
-      source.invisibleTimeout,
-      COMBAT.INVISIBLE_TIMEOUT,
-      { min: 1 }
-    ),
+    invisibleTimeout: intOr(source.invisibleTimeout, COMBAT.INVISIBLE_TIMEOUT, {
+      min: 1,
+    }),
   });
 }
 

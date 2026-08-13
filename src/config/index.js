@@ -64,7 +64,6 @@ try {
       oldKey: oldKey || null,
     },
     storage: {
-      dataFile: optionalEnv('DATA_FILE', './data/bots.json'),
       logDir: optionalEnv('LOG_DIR', './logs'),
       logLevel: optionalEnv('LOG_LEVEL', 'info'),
     },

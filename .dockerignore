@@ -18,7 +18,6 @@ scripts
 db
 
 README.md
-POSTGRES_MIGRATION.md
 LICENSE
 eslint.config.mjs
 .prettierrc

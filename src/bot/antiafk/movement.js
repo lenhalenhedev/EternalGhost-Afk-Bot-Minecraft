@@ -35,7 +35,7 @@ async function gotoWithStuckDetection(
         clearInterval(checker);
         try {
           bot.pathfinder.setGoal(null);
-        } catch (_) {
+        } catch {
           /* ignore */
         }
       }
