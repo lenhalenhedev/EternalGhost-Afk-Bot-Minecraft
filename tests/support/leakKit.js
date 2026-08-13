@@ -195,7 +195,17 @@ function makeCombatBot() {
     entities: {},
     inventory: { slots: [] },
     player: { entity: { attributes: {} } },
-    entity: { id: 1, position: new Vec(0, 64, 0) },
+    entity: {
+      id: 1,
+      position: new Vec(0, 64, 0),
+      velocity: new Vec(0, 0, 0),
+      yaw: 0,
+    },
+    blockAt(position) {
+      return Math.floor(position.y) === 63
+        ? { boundingBox: 'block', name: 'stone' }
+        : { boundingBox: 'empty', name: 'air' };
+    },
     attackCount: 0,
     attack() {
       bot.attackCount += 1;

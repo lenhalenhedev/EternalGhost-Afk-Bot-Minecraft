@@ -230,3 +230,57 @@ test('high-frequency death/retreat cycling does not accumulate timers', () => {
     tt.restore();
   }
 });
+
+test('_fleeFrom avoids a fixed X-axis fallback when positions overlap horizontally', () => {
+  const bot = makeCombatBot();
+  const combat = new Combat(bot, 'flee-direction', noop);
+  const phantom = makePhantom(2, 70);
+
+  combat._fleeFrom(phantom);
+
+  const goal = bot._setGoalCalls.at(-1);
+  assert.ok(goal, 'fleeing did not issue a pathfinder goal');
+  assert.strictEqual(goal.x, 0);
+  assert.strictEqual(goal.z, -12);
+});
+
+test('_fleeFrom refuses blocked, dangerous, and unloaded retreat destinations', () => {
+  const unsafeBlocks = [
+    (position) =>
+      Math.floor(position.y) === 63
+        ? { boundingBox: 'block', name: 'lava' }
+        : { boundingBox: 'empty', name: 'air' },
+    (position) =>
+      Math.floor(position.y) === 64
+        ? { boundingBox: 'block', name: 'stone' }
+        : { boundingBox: 'empty', name: 'air' },
+    () => null,
+  ];
+
+  for (const blockAt of unsafeBlocks) {
+    const bot = makeCombatBot();
+    bot.blockAt = blockAt;
+    const combat = new Combat(bot, 'unsafe-flee', noop);
+    const phantom = makePhantom(2, 70);
+
+    combat._fleeFrom(phantom);
+
+    assert.strictEqual(
+      bot._setGoalCalls.length,
+      0,
+      'unsafe destination was sent to pathfinder'
+    );
+  }
+});
+
+test('_fleeFrom logs pathfinder failures without throwing', () => {
+  const bot = makeCombatBot();
+  bot.pathfinder.setGoal = () => {
+    throw new Error('pathfinder unavailable');
+  };
+  const combat = new Combat(bot, 'flee-error', noop);
+  const phantom = makePhantom(2, 70);
+
+  assert.doesNotThrow(() => combat._fleeFrom(phantom));
+  assert.strictEqual(combat._goalActive, false);
+});
