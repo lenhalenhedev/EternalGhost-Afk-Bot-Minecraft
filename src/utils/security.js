@@ -35,6 +35,71 @@ function sanitizeForLog(value) {
   return str.replace(/[\r\n\t]/g, ' ');
 }
 
+const SENSITIVE_DIAGNOSTIC_KEY =
+  /^(?:password|passphrase|passwd|pwd|token|access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|cookie|set-cookie|secret|encryptedpassword|database[_-]?url|connection[_-]?string)$/i;
+const REDACTED = '[REDACTED]';
+
+function serialiseDiagnostic(value) {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Error)
+    return value.stack || value.message || String(value);
+  if (typeof value === 'string') return value;
+
+  const seen = new WeakSet();
+  try {
+    return JSON.stringify(value, (key, nested) => {
+      if (SENSITIVE_DIAGNOSTIC_KEY.test(key)) return REDACTED;
+      if (nested && typeof nested === 'object') {
+        if (seen.has(nested)) return '[Circular]';
+        seen.add(nested);
+      }
+      return nested;
+    });
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Redacts diagnostic data immediately before it leaves a trust boundary.
+ * This is deliberately lossy: a diagnostic channel must never trade secret
+ * disclosure for debuggability.
+ */
+function redactDiagnostic(value) {
+  let text = serialiseDiagnostic(value);
+
+  text = text
+    .replace(
+      /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----/gi,
+      REDACTED
+    )
+    .replace(
+      /\b(authorization)\s*[:=]\s*bearer\s+[^\s,;]+/gi,
+      `$1: ${REDACTED}`
+    )
+    .replace(/\b(cookie|set-cookie)\s*[:=]\s*[^\r\n]+/gi, `$1: ${REDACTED}`)
+    .replace(
+      /\b(password|passphrase|passwd|pwd|token|access[_-]?token|refresh[_-]?token|api[_-]?key|secret|encryptedpassword|database[_-]?url|connection[_-]?string)\b\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;}&\]]+)/gi,
+      `$1: ${REDACTED}`
+    )
+    .replace(
+      /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:@/]+):([^\s@/]+)@/gi,
+      `$1$2:${REDACTED}@`
+    );
+
+  return Array.from(text)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0);
+      return (
+        codePoint === 0x09 ||
+        codePoint === 0x0a ||
+        codePoint === 0x0d ||
+        (codePoint >= 0x20 && codePoint !== 0x7f)
+      );
+    })
+    .join('');
+}
+
 function strictInt(value, opts = {}) {
   const { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = opts;
   let n;
@@ -52,6 +117,7 @@ function strictInt(value, opts = {}) {
 module.exports = {
   assertNoPollutingKeys,
   sanitizeForLog,
+  redactDiagnostic,
   strictInt,
   FORBIDDEN_KEYS,
 };

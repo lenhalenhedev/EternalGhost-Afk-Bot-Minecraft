@@ -36,11 +36,15 @@ CREATE TABLE IF NOT EXISTS bots (
     -- visible/hidden flag (hidden bots are kept but excluded from default lists)
     hidden             BOOLEAN      NOT NULL DEFAULT FALSE,
     created_by         TEXT         NOT NULL,                 -- Discord user id
+    created_in_guild   TEXT,                                  -- immutable Discord guild id
     created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
     -- Uniqueness guard mirrors Persistence.findBot(host, port, username)
     CONSTRAINT bots_host_port_username_key UNIQUE (host, port, username)
 );
+
+-- Upgrade existing databases created before creation-guild provenance.
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_in_guild TEXT;
 
 -- ─── Anti-AFK configuration (1:1 with bots) ─────────────────────────────────
 CREATE TABLE IF NOT EXISTS bot_antiafk_config (

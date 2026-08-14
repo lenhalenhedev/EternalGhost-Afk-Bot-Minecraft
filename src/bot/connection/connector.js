@@ -5,6 +5,7 @@ const { decrypt } = require('../../services/encryption');
 const config = require('../../config');
 const { logger, botLog } = require('../../services/logger');
 const { strictInt, sanitizeForLog } = require('../../utils/security');
+const { assertPublicDestination } = require('../../utils/validators');
 
 const DEFAULT_VIEW_DISTANCE = 4;
 const MIN_VIEW_DISTANCE = 2;
@@ -38,9 +39,15 @@ function decryptPassword(record) {
   return plaintext;
 }
 
-function createMineflayerBot(record) {
+async function createMineflayerBot(
+  record,
+  { resolveDestination = assertPublicDestination } = {}
+) {
+  const destination = await resolveDestination(record.host, {
+    allowPrivateIps: config.egress?.privateDestinationAllowlist || [],
+  });
   return mineflayer.createBot({
-    host: record.host,
+    host: destination.address,
     port: record.port,
     username: record.username,
     version: record.version,

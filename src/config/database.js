@@ -78,50 +78,87 @@ function readSslCertificate(certPath) {
   }
 }
 
-/**
- * Build the `ssl` option for the pg Pool config.
- *
- * - DB_SSL=false (default) -> SSL disabled, returns `undefined`.
- * - Strict mode (`DB_SSL_REJECT_UNAUTHORIZED=true`) -> a readable, parseable
- *   CA certificate is mandatory and invalid configuration aborts startup.
- * - In non-strict mode (`DB_SSL_REJECT_UNAUTHORIZED=false`) the CA path is
- *   deliberately ignored and certificate verification remains disabled.
- */
-function buildSslConfig() {
-  const sslEnabled =
-    boolEnv('DB_SSL') ||
-    /^(require|verify-ca|verify-full)$/i.test(optionalEnv('PGSSLMODE', ''));
-  const rejectUnauthorized = strictBoolEnv('DB_SSL_REJECT_UNAUTHORIZED', false);
+function isLoopbackDatabaseHost(host) {
+  const normalized = String(host || '')
+    .replace(/^\[|\]$/g, '')
+    .toLowerCase();
+  return (
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    /^127\./.test(normalized)
+  );
+}
 
-  if (rejectUnauthorized) {
-    const certPath = optionalEnv('DB_SSL_CERT_PATH');
-    const ca = readSslCertificate(certPath);
-    if (!ca) {
-      console.error(
-        '[database] FATAL: DB_SSL_REJECT_UNAUTHORIZED=true requires ' +
-          'DB_SSL_CERT_PATH to reference a readable, valid CA certificate. ' +
-          'Database startup aborted before creating the connection pool.'
-      );
-      throw new Error(
-        'Strict database TLS is enabled, but DB_SSL_CERT_PATH is missing or invalid.'
-      );
-    }
+function fatalTls(message) {
+  console.error(`[database] FATAL: ${message}`);
+  throw new Error(message);
+}
 
-    // Validate the strict configuration even when DB_SSL is separately off;
-    // no SSL option is passed to pg until the transport is explicitly enabled.
-    return sslEnabled ? { ca, rejectUnauthorized: true } : undefined;
+function parseDatabaseTarget(connectionString) {
+  if (!connectionString) {
+    const host = optionalEnv('PGHOST', 'localhost');
+    return { host, connectionString: null };
   }
 
-  if (!sslEnabled) return undefined;
+  let url;
+  try {
+    url = new URL(connectionString);
+  } catch {
+    fatalTls('DATABASE_URL must be a valid PostgreSQL connection URL.');
+  }
+  const unsafeSslParameters = [
+    'ssl',
+    'sslmode',
+    'sslcert',
+    'sslkey',
+    'sslrootcert',
+    'rejectunauthorized',
+  ];
+  if (
+    [...url.searchParams.keys()].some((key) =>
+      unsafeSslParameters.includes(key.toLowerCase())
+    )
+  ) {
+    fatalTls(
+      'DATABASE_URL must not include SSL parameters; use DB_SSL_CERT_PATH instead.'
+    );
+  }
+  return { host: url.hostname, connectionString };
+}
 
-  // Non-strict mode deliberately ignores DB_SSL_CERT_PATH.
-  return { rejectUnauthorized: false };
+/**
+ * Build the pg SSL option. Any non-loopback database must provide a trusted CA
+ * and certificate verification. Local development may deliberately use a
+ * loopback plaintext socket, but never an unverified TLS connection.
+ */
+function buildSslConfig({ remote }) {
+  const sslEnabled = boolEnv('DB_SSL');
+  const rejectUnauthorized = strictBoolEnv('DB_SSL_REJECT_UNAUTHORIZED', false);
+
+  if (remote && (!sslEnabled || !rejectUnauthorized)) {
+    fatalTls(
+      'remote PostgreSQL requires verified TLS (DB_SSL=true, DB_SSL_REJECT_UNAUTHORIZED=true, and DB_SSL_CERT_PATH).'
+    );
+  }
+  if (!sslEnabled) return undefined;
+  if (!rejectUnauthorized) {
+    fatalTls('unverified PostgreSQL TLS is not supported.');
+  }
+
+  const ca = readSslCertificate(optionalEnv('DB_SSL_CERT_PATH'));
+  if (!ca) {
+    fatalTls(
+      'verified PostgreSQL TLS requires DB_SSL_CERT_PATH to reference a readable, valid CA certificate.'
+    );
+  }
+  return { ca, rejectUnauthorized: true };
 }
 
 /** Build the pg Pool config from environment variables. */
 function buildPoolConfig() {
-  const connectionString = optionalEnv('DATABASE_URL');
-  const ssl = buildSslConfig();
+  const target = parseDatabaseTarget(optionalEnv('DATABASE_URL'));
+  const ssl = buildSslConfig({ remote: !isLoopbackDatabaseHost(target.host) });
+  const connectionString = target.connectionString;
 
   const poolTuning = {
     max: intEnv('DB_POOL_MAX', 2),
@@ -138,7 +175,7 @@ function buildPoolConfig() {
   }
 
   return {
-    host: optionalEnv('PGHOST', 'localhost'),
+    host: target.host,
     port: intEnv('PGPORT', 5432),
     user: optionalEnv('PGUSER'),
     password: optionalEnv('PGPASSWORD'),

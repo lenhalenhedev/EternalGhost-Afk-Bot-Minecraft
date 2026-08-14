@@ -29,8 +29,14 @@ module.exports = {
       return;
     }
 
+    const principal = Object.freeze({
+      userId: interaction.user.id,
+      guildId: interaction.guildId || null,
+      roles: [],
+    });
+
     try {
-      await command.execute(interaction);
+      await command.execute(interaction, principal);
     } catch (err) {
       // Full detail always goes server-side, regardless of what we show the user.
       logger.error(

@@ -317,15 +317,18 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 
 | Variable                        | Required | Description                                                          |
 | ------------------------------- | :------: | -------------------------------------------------------------------- |
-| `DATABASE_URL`                  |   No*    | Full connection string; takes precedence over discrete `PG*` values. |
+| `DATABASE_URL`                  |   No*    | Full connection string; must not contain SSL parameters, which could override verified TLS. |
 | `PGHOST` / `PGPORT`             |   No*    | Host and port (used when `DATABASE_URL` is empty).                   |
 | `PGUSER` / `PGPASSWORD`         |   No*    | Database credentials.                                                |
 | `PGDATABASE`                    |   No*    | Target database name.                                                |
-| `DB_SSL`                        |    No    | Set `true` to enable TLS for managed Postgres providers.             |
-| `DB_SSL_REJECT_UNAUTHORIZED`    |    No    | Set `false` to accept self-signed certificates.                      |
+| `DB_SSL`                        | Remote: Yes | Must be `true` for every non-loopback database.                    |
+| `DB_SSL_REJECT_UNAUTHORIZED`    | Remote: Yes | Must be `true`; unverified certificates are not supported.         |
+| `DB_SSL_CERT_PATH`              | Remote: Yes | Readable, valid CA PEM used to verify the database certificate.    |
 | `DB_POOL_MAX` / `DB_POOL_MIN`   |    No    | Connection-pool sizing.                                              |
 | `DB_POOL_IDLE_TIMEOUT_MS`       |    No    | Idle connection eviction timeout.                                    |
 | `DB_POOL_CONNECTION_TIMEOUT_MS` |    No    | Connection acquisition timeout.                                      |
+
+> **Transport policy.** All non-loopback PostgreSQL instances require a CA-backed TLS connection with `rejectUnauthorized: true`. Only `localhost`, `127.0.0.0/8`, and `::1` may use plaintext for local development. `DATABASE_URL` TLS query parameters are rejected to prevent accidental downgrade.
 
 > *At least one of `DATABASE_URL` or the discrete `PG*` set must be provided.
 
@@ -340,12 +343,13 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 | `BOT_QUEUE_TIMEOUT`        | `10000`  | Per-task timeout in milliseconds.                       |
 | `LOG_SUMMARY_INTERVAL_MIN` | `15`     | Discord log-summary cadence in minutes (bounded 10–30). |
 | `MINECRAFT_VIEW_DISTANCE`  | `4`      | Requested chunk view distance (bounded 2–16).           |
+| `MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST` | empty | Exact private IPv4/IPv6 literals explicitly approved for Minecraft only; hostnames are not accepted. |
 
 ---
 
 ## Discord Command Reference
 
-All commands are ephemeral, administrator-gated, and respond with structured embeds.
+All commands are ephemeral, administrator-gated, principal-scoped, and respond with structured embeds. Resource IDs must be full canonical UUIDs; prefixes are intentionally rejected. A command can view or mutate only records created by the authenticated user in the same creation guild.
 
 | Command       | Options                                                               | Description                                                            |
 | ------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -358,12 +362,14 @@ All commands are ephemeral, administrator-gated, and respond with structured emb
 | `/chat`       | `message`, `id?`                                                      | Relays a validated chat message or whitelisted in-game command.        |
 | `/list-bot`   | `page?`                                                               | Lists registered bots with pagination.                                 |
 | `/status-bot` | `id`                                                                  | Shows detailed live status for a single bot.                           |
-| `/stats`      | —                                                                     | Displays aggregate fleet statistics.                                   |
+| `/stats`      | —                                                                     | Displays aggregate statistics for the caller's authorized bots.        |
 | `/logs-bot`   | `id`, `lines?`, `hours?`, `level?`                                    | Returns recent buffered logs filtered by count, age, and level.        |
 | `/select-bot` | `id`                                                                  | Sets the caller's default bot for commands that omit `id`.             |
 | `/help`       | —                                                                     | Lists available commands and usage.                                    |
 
 > **Chat safety.** The `/chat` command enforces a 200-character limit, a per-user cooldown, control-character rejection, and an in-game command whitelist (`/register`, `/login`, `/spawn`, `/home`, `/back`). Non-whitelisted slash commands are refused.
+
+> **Egress safety.** Each Minecraft destination is syntax-validated at creation and resolved again immediately before connecting. The connector denies loopback, private, link-local, metadata, multicast, unspecified, reserved, and mixed DNS results by default, then pins the connection to one verified address to prevent DNS rebinding. A private server can be approved only by listing its exact IP in `MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST`.
 
 ---
 

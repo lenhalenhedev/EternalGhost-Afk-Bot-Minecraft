@@ -19,23 +19,23 @@ module.exports = {
     .setDescription('Xóa một bot (sẽ stop bot trước nếu đang chạy)')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
-      o
-        .setName('id')
-        .setDescription('Bot ID (8 ký tự đầu hoặc đầy đủ)')
-        .setRequired(true)
+      o.setName('id').setDescription('Full bot ID').setRequired(true)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const partial = interaction.options.getString('id').trim();
-
-    // Resolve bot by prefix
-    const all = BotManager.getAllBots();
-    const match = all.find((b) => b.id.startsWith(partial) || b.id === partial);
-    if (!match) {
+    let match;
+    try {
+      match = BotManager.resolveAuthorizedBot(
+        principal,
+        interaction.options.getString('id').trim()
+      );
+    } catch (err) {
       return interaction.editReply({
-        embeds: [errorEmbed(`Không tìm thấy bot với ID \`${partial}\``)],
+        embeds: [
+          errorEmbed(safeErrorMessage(err, 'Bot not found or access denied.')),
+        ],
       });
     }
 
@@ -53,7 +53,7 @@ module.exports = {
 
     const r = match.record;
     await interaction.editReply({
-      content: `⚠️ Bạn có chắc muốn **xóa** bot \`${r.username}\`@\`${r.host}:${r.port}\` (\`${match.id.slice(0, 8)}\`)?`,
+      content: `⚠️ Bạn có chắc muốn **xóa** bot \`${r.username}\`@\`${r.host}:${r.port}\` (\`${match.id}\`)?`,
       components: [row],
     });
 
@@ -84,7 +84,7 @@ module.exports = {
     }
 
     try {
-      await BotManager.deleteBot(match.id, interaction.user.id);
+      await BotManager.deleteBot(principal, match.id);
       await interaction.editReply({
         embeds: [
           successEmbed(

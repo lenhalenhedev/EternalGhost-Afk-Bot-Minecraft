@@ -52,7 +52,7 @@ module.exports = {
         .setRequired(false)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const host = interaction.options.getString('host');
@@ -66,7 +66,7 @@ module.exports = {
     try {
       const { id } = await BotManager.createBot(
         { host, port, username, password, version, autoReconnect },
-        interaction.user.id
+        principal
       );
 
       const embed = successEmbed(

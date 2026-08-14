@@ -21,6 +21,14 @@ const botRepository = require('./botRepository');
 const MAX_PENDING_WRITES = 500;
 const FLUSH_TIMEOUT_MS = 10_000;
 
+class PersistenceError extends Error {
+  constructor(code, message, cause) {
+    super(message, cause ? { cause } : undefined);
+    this.name = 'PersistenceError';
+    this.code = code;
+  }
+}
+
 // ─── Persistence ──────────────────────────────────────────────────────
 class Persistence {
   constructor() {
@@ -110,55 +118,89 @@ class Persistence {
     );
   }
 
-  saveBot(record) {
+  async saveBot(record) {
     const normalised = this._normaliseRecord(record);
-    this._data.bots[normalised.id] = normalised;
-    this._enqueueTask(
+    await this._enqueueTask(
       (client) => botRepository.saveBotFull(client, normalised),
-      `saveBot(${normalised.id})`
+      `saveBot(${normalised.id})`,
+      { critical: true }
     );
+    this._data.bots[normalised.id] = normalised;
+    return normalised;
   }
 
-  deleteBot(id) {
+  async saveBotWithActivity(record, action, actor, meta = {}) {
+    const normalised = this._normaliseRecord(record);
+    await this._enqueueTask(
+      async (client) => {
+        await botRepository.saveBotFull(client, normalised);
+        await this._insertActivity(client, normalised.id, action, actor, meta);
+      },
+      `saveBotWithActivity(${normalised.id}, ${action})`,
+      { critical: true }
+    );
+    this._data.bots[normalised.id] = normalised;
+    return normalised;
+  }
+
+  async deleteBot(id) {
     if (!this._data.bots[id]) return false;
+    await this._enqueueTask(
+      (client) => botRepository.deleteBotRow(client, id),
+      `deleteBot(${id})`,
+      { critical: true }
+    );
     delete this._data.bots[id];
     for (const [uid, bid] of Object.entries(this._data.userSelections)) {
       if (bid === id) delete this._data.userSelections[uid];
     }
-    this._enqueueTask(
-      (client) => botRepository.deleteBotRow(client, id),
-      `deleteBot(${id})`
-    );
     return true;
   }
 
-  updateBotState(id, patch) {
-    const bot = this._data.bots[id];
-    if (!bot) return;
-    Object.assign(bot, patch, { updatedAt: new Date().toISOString() });
-    const COLUMN_MAP = {
-      host: 'host',
-      port: 'port',
-      version: 'version',
-      encryptedPassword: 'encrypted_password',
-      autoReconnect: 'auto_reconnect',
-      wasRunning: 'was_running',
-      hidden: 'hidden',
-    };
-    const sets = [];
-    const params = [id];
-    for (const [key, col] of Object.entries(COLUMN_MAP)) {
-      if (patch[key] !== undefined) {
-        params.push(patch[key]);
-        sets.push(`${col} = $${params.length}`);
-      }
-    }
-    sets.push('updated_at = now()');
-    this._enqueue(
-      `UPDATE bots SET ${sets.join(', ')} WHERE id = $1`,
-      params,
-      `updateBotState(${id})`
+  async deleteBotWithActivity(id, action, actor, meta = {}) {
+    if (!this._data.bots[id]) return false;
+    await this._enqueueTask(
+      async (client) => {
+        await this._insertActivity(client, id, action, actor, meta);
+        await botRepository.deleteBotRow(client, id);
+      },
+      `deleteBotWithActivity(${id}, ${action})`,
+      { critical: true }
     );
+    delete this._data.bots[id];
+    for (const [uid, bid] of Object.entries(this._data.userSelections)) {
+      if (bid === id) delete this._data.userSelections[uid];
+    }
+    return true;
+  }
+
+  async updateBotState(id, patch) {
+    const bot = this._data.bots[id];
+    if (!bot) return false;
+    const update = this._buildBotStateUpdate(id, patch);
+    await this._enqueueTask(
+      (client) => client.query(update.text, update.params),
+      `updateBotState(${id})`,
+      { critical: true }
+    );
+    Object.assign(bot, patch, { updatedAt: new Date().toISOString() });
+    return true;
+  }
+
+  async updateBotStateWithActivity(id, patch, action, actor, meta = {}) {
+    const bot = this._data.bots[id];
+    if (!bot) return false;
+    const update = this._buildBotStateUpdate(id, patch);
+    await this._enqueueTask(
+      async (client) => {
+        await client.query(update.text, update.params);
+        await this._insertActivity(client, id, action, actor, meta);
+      },
+      `updateBotStateWithActivity(${id}, ${action})`,
+      { critical: true }
+    );
+    Object.assign(bot, patch, { updatedAt: new Date().toISOString() });
+    return true;
   }
 
   updateBotConfig(id, section, patch) {
@@ -180,24 +222,32 @@ class Persistence {
     return this._data.userSelections[userId] || null;
   }
 
-  setUserSelection(userId, botId) {
-    this._data.userSelections[userId] = botId;
-    this._enqueue(
-      `INSERT INTO user_selections (user_id, bot_id, updated_at)
-       VALUES ($1, $2, now())
-       ON CONFLICT (user_id) DO UPDATE SET bot_id = $2, updated_at = now()`,
-      [userId, botId],
-      `setUserSelection(${userId})`
+  async setUserSelection(userId, botId) {
+    await this._enqueueTask(
+      (client) =>
+        client.query(
+          `INSERT INTO user_selections (user_id, bot_id, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (user_id) DO UPDATE SET bot_id = $2, updated_at = now()`,
+          [userId, botId]
+        ),
+      `setUserSelection(${userId})`,
+      { critical: true }
     );
+    this._data.userSelections[userId] = botId;
   }
 
   // ─── Activity history ─────────────────────────────────────────
-  logActivity(botId, action, actor = null, meta = {}) {
-    this._enqueue(
-      `INSERT INTO bot_activity_log (bot_id, action, actor, meta)
-       VALUES ($1, $2, $3, $4::jsonb)`,
-      [botId, action, actor, JSON.stringify(meta || {})],
-      `logActivity(${botId}, ${action})`
+  async logActivity(botId, action, actor = null, meta = {}) {
+    await this._enqueueTask(
+      (client) =>
+        client.query(
+          `INSERT INTO bot_activity_log (bot_id, action, actor, meta)
+         VALUES ($1, $2, $3, $4::jsonb)`,
+          [botId, action, actor, JSON.stringify(meta || {})]
+        ),
+      `logActivity(${botId}, ${action})`,
+      { critical: true }
     );
   }
 
@@ -231,6 +281,39 @@ class Persistence {
   }
 
   // ─── Internal helpers ─────────────────────────────────────────
+  _buildBotStateUpdate(id, patch) {
+    const columnMap = {
+      host: 'host',
+      port: 'port',
+      version: 'version',
+      encryptedPassword: 'encrypted_password',
+      autoReconnect: 'auto_reconnect',
+      wasRunning: 'was_running',
+      hidden: 'hidden',
+    };
+    const sets = [];
+    const params = [id];
+    for (const [key, column] of Object.entries(columnMap)) {
+      if (patch[key] !== undefined) {
+        params.push(patch[key]);
+        sets.push(`${column} = $${params.length}`);
+      }
+    }
+    sets.push('updated_at = now()');
+    return {
+      text: `UPDATE bots SET ${sets.join(', ')} WHERE id = $1`,
+      params,
+    };
+  }
+
+  _insertActivity(client, botId, action, actor, meta) {
+    return client.query(
+      `INSERT INTO bot_activity_log (bot_id, action, actor, meta)
+       VALUES ($1, $2, $3, $4::jsonb)`,
+      [botId, action, actor, JSON.stringify(meta || {})]
+    );
+  }
+
   _normaliseRecord(record) {
     const now = new Date().toISOString();
     return {
@@ -245,6 +328,7 @@ class Persistence {
       wasRunning: record.wasRunning !== undefined ? record.wasRunning : false,
       hidden: record.hidden !== undefined ? record.hidden : false,
       createdBy: record.createdBy || null,
+      createdInGuild: record.createdInGuild || null,
       createdAt: record.createdAt || now,
       updatedAt: record.updatedAt || now,
       antiAfk: { ...DEFAULT_ANTIAFK, ...(record.antiAfk || {}) },
@@ -255,7 +339,7 @@ class Persistence {
 
   /** Queue a single parameterised statement. */
   _enqueue(text, params, label) {
-    this._enqueueTask((client) => client.query(text, params), label);
+    return this._enqueueTask((client) => client.query(text, params), label);
   }
 
   /**
@@ -270,27 +354,36 @@ class Persistence {
    * reference was already set, so this is safe. We add explicit chain
    * recovery to make it bulletproof.
    */
-  _enqueueTask(taskFn, label) {
-    // FIX: Backpressure - prevent unbounded write chain growth
+  _enqueueTask(taskFn, label, { critical = false } = {}) {
     if (this._pending >= MAX_PENDING_WRITES) {
-      logger.warn(
-        `[Persistence] Write queue full (${this._pending} pending) — dropping: ${label}`
+      const err = new PersistenceError(
+        'PERSISTENCE_QUEUE_FULL',
+        'Persistence is temporarily unavailable.'
       );
-      return this._writeChain;
+      logger.warn(
+        `[Persistence] Write queue full (${this._pending} pending) — rejecting: ${label}`
+      );
+      return critical ? Promise.reject(err) : Promise.resolve();
     }
 
     this._pending++;
-    this._writeChain = this._writeChain
-      .then(() => db.withTransaction(taskFn))
+    const execution = this._writeChain.then(() => db.withTransaction(taskFn));
+    this._writeChain = execution
       .catch((err) => {
         logger.error(`[Persistence] Write failed (${label}): ${err.message}`);
-        // FIX: Don't rethrow - this ensures the chain continues even after errors.
-        // The original code already did this, but we make the intent explicit.
       })
       .finally(() => {
         this._pending--;
       });
-    return this._writeChain;
+
+    if (!critical) return this._writeChain;
+    return execution.catch((cause) => {
+      throw new PersistenceError(
+        'PERSISTENCE_WRITE_FAILED',
+        'Persistence is temporarily unavailable.',
+        cause
+      );
+    });
   }
 }
 

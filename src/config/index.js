@@ -1,6 +1,7 @@
 'use strict';
 require('dotenv').config();
 
+const net = require('node:net');
 const { strictInt } = require('../utils/security');
 
 function requireEnv(key) {
@@ -17,6 +18,17 @@ function optionalEnv(key, defaultValue = '') {
 function intEnv(key, fallback, bounds = {}) {
   const parsed = strictInt(process.env[key], bounds);
   return parsed.valid ? parsed.value : fallback;
+}
+
+function ipListEnv(key) {
+  const values = optionalEnv(key)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (values.some((value) => net.isIP(value) === 0)) {
+    throw new Error(`${key} must contain only literal IPv4 or IPv6 addresses`);
+  }
+  return values;
 }
 
 const HARDCODED_LOG_CHANNEL_ID = '';
@@ -74,6 +86,14 @@ try {
       user: optionalEnv('PGUSER'),
       database: optionalEnv('PGDATABASE'),
       poolMax: intEnv('DB_POOL_MAX', 10, { min: 1 }),
+    },
+    egress: {
+      // Non-public targets are denied by default. This is an intentional,
+      // exact-IP exception for private Minecraft servers only; hostnames are
+      // never approved through this setting to prevent DNS rebinding bypasses.
+      privateDestinationAllowlist: ipListEnv(
+        'MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST'
+      ),
     },
     limits: {
       maxBots: intEnv('MAX_BOTS', 50, { min: 1 }),

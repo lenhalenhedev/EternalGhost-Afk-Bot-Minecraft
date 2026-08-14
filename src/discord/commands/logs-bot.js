@@ -7,6 +7,7 @@ const {
 } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { getBotLogs } = require('../../services/logger');
+const { redactDiagnostic } = require('../../utils/security');
 const { errorEmbed } = require('../embeds');
 
 const LEVEL_EMOJI = { info: 'ℹ️', warn: '⚠️', error: '❌', debug: '🔍' };
@@ -54,22 +55,20 @@ module.exports = {
         )
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    // Resolve bot
-    const partial = interaction.options.getString('id')?.trim();
-    const instance = partial
-      ? BotManager.getAllBots().find(
-          (b) => b.id.startsWith(partial) || b.id === partial
-        )
-      : BotManager.getUserSelection(interaction.user.id);
-
-    if (!instance) {
-      const hint = partial
-        ? `Không tìm thấy bot \`${partial}\`.`
-        : 'Chưa chọn bot. Dùng `/select-bot` trước.';
-      return interaction.editReply({ embeds: [errorEmbed(hint)] });
+    let instance;
+    try {
+      instance = BotManager.resolveAuthorizedBot(
+        principal,
+        interaction.options.getString('id')?.trim() || null,
+        { allowSelection: true }
+      );
+    } catch {
+      return interaction.editReply({
+        embeds: [errorEmbed('Bot not found or access denied.')],
+      });
     }
 
     const lines = interaction.options.getInteger('lines') ?? 30;
@@ -90,10 +89,10 @@ module.exports = {
     const lines_text = entries.map((e) => {
       const ts = new Date(e.ts).toISOString().slice(11, 19);
       const em = LEVEL_EMOJI[e.level] || '•';
-      return `[${ts}] ${em} [${e.level.toUpperCase()}] ${e.msg}`;
+      return `[${ts}] ${em} [${e.level.toUpperCase()}] ${redactDiagnostic(e.msg)}`;
     });
 
-    const raw = lines_text.join('\n');
+    const raw = redactDiagnostic(lines_text.join('\n'));
 
     // If fits in Discord message (< 1900 chars), send inline; otherwise as file
     const header = `📋 **Logs: \`${instance.record.username}\`** (${entries.length} dòng${hours ? `, ${hours}h gần nhất` : ''})\n\`\`\`\n`;

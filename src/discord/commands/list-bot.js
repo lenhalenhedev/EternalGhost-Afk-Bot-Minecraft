@@ -22,10 +22,10 @@ module.exports = {
         .setRequired(false)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply();
 
-    const bots = BotManager.getAllBots();
+    const bots = BotManager.listAuthorizedBots(principal);
     if (bots.length === 0) {
       return interaction.editReply(
         '📭 Chưa có bot nào. Dùng `/create-bot` để tạo.'
@@ -36,7 +36,7 @@ module.exports = {
     const totalPages = Math.ceil(bots.length / PAGE_SIZE);
     const slice = bots.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-    const selectedBot = BotManager.getUserSelection(interaction.user.id);
+    const selectedBot = BotManager.getUserSelection(principal);
     const lines = slice.map((b) => buildListEntry(b, selectedBot?.id === b.id));
 
     const embed = new EmbedBuilder()

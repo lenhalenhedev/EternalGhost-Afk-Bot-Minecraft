@@ -19,6 +19,7 @@ function runDatabaseLoad(overrides) {
     'DB_SSL_REJECT_UNAUTHORIZED',
     'PGSSLMODE',
     'DATABASE_URL',
+    'PGHOST',
   ]) {
     delete env[key];
   }
@@ -28,6 +29,7 @@ function runDatabaseLoad(overrides) {
     const database = require(${JSON.stringify(DATABASE_MODULE)});
     const ssl = database.pool.options.ssl;
     process.stdout.write(JSON.stringify({
+      host: database.pool.options.host || null,
       ssl: ssl === undefined ? null : {
         rejectUnauthorized: ssl.rejectUnauthorized,
         hasCa: typeof ssl.ca === 'string' && ssl.ca.length > 0,
@@ -43,97 +45,82 @@ function runDatabaseLoad(overrides) {
   });
 }
 
-test('strict TLS aborts startup when the CA path is missing', () => {
-  const result = runDatabaseLoad({
-    DB_SSL: 'true',
-    DB_SSL_REJECT_UNAUTHORIZED: 'true',
-  });
-
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /FATAL: DB_SSL_REJECT_UNAUTHORIZED=true/);
-  assert.match(result.stderr, /missing or invalid/);
-});
-
-test('strict validation aborts startup even when DB_SSL is off', () => {
-  const result = runDatabaseLoad({
-    DB_SSL: 'false',
-    DB_SSL_REJECT_UNAUTHORIZED: 'true',
-  });
-
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /FATAL: DB_SSL_REJECT_UNAUTHORIZED=true/);
-});
-
-test('strict TLS aborts startup when the CA path is invalid', () => {
-  const result = runDatabaseLoad({
-    DB_SSL: 'true',
-    DB_SSL_CERT_PATH: path.join(os.tmpdir(), 'missing-ca-for-audit.pem'),
-    DB_SSL_REJECT_UNAUTHORIZED: 'true',
-  });
-
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /FATAL: DB_SSL_REJECT_UNAUTHORIZED=true/);
-  assert.match(result.stderr, /missing or invalid/);
-});
-
-test('strict TLS aborts startup when a readable CA file is malformed', () => {
-  const tempDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'invalid-database-ca-')
-  );
-  const certPath = path.join(tempDir, 'ca.pem');
-  fs.writeFileSync(certPath, 'not a PEM certificate', { mode: 0o600 });
-
-  try {
-    const result = runDatabaseLoad({
-      DB_SSL: 'true',
-      DB_SSL_CERT_PATH: certPath,
-      DB_SSL_REJECT_UNAUTHORIZED: 'true',
-    });
-
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /FATAL: DB_SSL_REJECT_UNAUTHORIZED=true/);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
-test('non-strict TLS ignores a missing or invalid CA path', () => {
-  const result = runDatabaseLoad({
-    DB_SSL: 'true',
-    DB_SSL_CERT_PATH: path.join(os.tmpdir(), 'ignored-ca-for-audit.pem'),
-    DB_SSL_REJECT_UNAUTHORIZED: 'false',
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), {
-    ssl: { rejectUnauthorized: false, hasCa: false },
-  });
-});
-
-test('strict TLS accepts a readable, parseable CA certificate', () => {
+function withTrustedCa(callback) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'database-ca-'));
   const certPath = path.join(tempDir, 'ca.pem');
   fs.writeFileSync(certPath, tls.rootCertificates[0], { mode: 0o600 });
-
   try {
-    const result = runDatabaseLoad({
+    callback(certPath);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+test('a remote database aborts startup without an explicit verified-TLS CA', () => {
+  const result = runDatabaseLoad({ PGHOST: 'db.example.test' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /FATAL: remote PostgreSQL requires verified TLS/);
+});
+
+test('a remote database rejects plaintext and unverified TLS toggles', () => {
+  for (const overrides of [
+    { PGHOST: 'db.example.test', DB_SSL: 'false' },
+    {
+      PGHOST: 'db.example.test',
       DB_SSL: 'true',
-      DB_SSL_CERT_PATH: certPath,
+      DB_SSL_REJECT_UNAUTHORIZED: 'false',
+    },
+  ]) {
+    const result = runDatabaseLoad(overrides);
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stderr,
+      /FATAL: remote PostgreSQL requires verified TLS/
+    );
+  }
+});
+
+test('a remote database accepts a readable CA only with certificate verification enabled', () => {
+  withTrustedCa((certPath) => {
+    const result = runDatabaseLoad({
+      PGHOST: 'db.example.test',
+      DB_SSL: 'true',
       DB_SSL_REJECT_UNAUTHORIZED: 'true',
+      DB_SSL_CERT_PATH: certPath,
     });
 
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), {
+      host: 'db.example.test',
       ssl: { rejectUnauthorized: true, hasCa: true },
     });
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
+  });
 });
 
-test('invalid strict boolean configuration aborts startup', () => {
+test('database URLs with TLS parameters are rejected so they cannot override verified TLS', () => {
   const result = runDatabaseLoad({
-    DB_SSL: 'true',
+    DATABASE_URL:
+      'postgres://user:password@db.example.test/app?sslmode=no-verify',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /must not include SSL parameters/);
+});
+
+test('an explicit loopback development database may use local plaintext transport', () => {
+  const result = runDatabaseLoad({ PGHOST: '127.0.0.1' });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    host: '127.0.0.1',
+    ssl: null,
+  });
+});
+
+test('invalid TLS booleans abort startup', () => {
+  const result = runDatabaseLoad({
+    PGHOST: 'db.example.test',
     DB_SSL_REJECT_UNAUTHORIZED: 'sometimes',
   });
 

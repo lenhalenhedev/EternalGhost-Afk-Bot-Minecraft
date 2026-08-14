@@ -11,11 +11,11 @@ module.exports = {
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply();
 
-    const stats = BotManager.getStats();
-    const bots = BotManager.getAllBots();
+    const stats = BotManager.getStats(principal);
+    const bots = BotManager.listAuthorizedBots(principal);
     const embed = buildStatsEmbed(stats, bots);
 
     // Detailed per-bot state table (top 20)

@@ -37,7 +37,7 @@ module.exports = {
         .setRequired(false)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // Cooldown check
@@ -62,19 +62,20 @@ module.exports = {
       return interaction.editReply({ embeds: [errorEmbed(validation.reason)] });
     }
 
-    // Resolve bot
-    const partial = interaction.options.getString('id')?.trim();
-    const instance = partial
-      ? BotManager.getAllBots().find(
-          (b) => b.id.startsWith(partial) || b.id === partial
-        )
-      : BotManager.getUserSelection(interaction.user.id);
-
-    if (!instance) {
-      const hint = partial
-        ? `Không tìm thấy bot \`${partial}\`.`
-        : 'Chưa chọn bot. Dùng `/select-bot` trước.';
-      return interaction.editReply({ embeds: [errorEmbed(hint)] });
+    // Resolve an exact canonical ID or an owner-scoped saved selection.
+    let instance;
+    try {
+      instance = BotManager.resolveAuthorizedBot(
+        principal,
+        interaction.options.getString('id')?.trim() || null,
+        { allowSelection: true }
+      );
+    } catch (err) {
+      return interaction.editReply({
+        embeds: [
+          errorEmbed(safeErrorMessage(err, 'Bot not found or access denied.')),
+        ],
+      });
     }
 
     if (!ALIVE_STATES.has(instance.state)) {
@@ -88,7 +89,7 @@ module.exports = {
     }
 
     try {
-      await BotManager.chatBot(instance.id, message);
+      await BotManager.chatBot(principal, instance.id, message);
       cooldowns.set(interaction.user.id, Date.now());
       await interaction.editReply({
         embeds: [

@@ -1,5 +1,6 @@
 'use strict';
 const net = require('net');
+const dns = require('node:dns').promises;
 const { strictInt } = require('./security');
 
 /**
@@ -100,6 +101,132 @@ function validateUsername(username) {
     };
   }
   return { valid: true, value: username };
+}
+
+function isPublicIpv4(address) {
+  const octets = address.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet))) {
+    return false;
+  }
+  const [a, b, c] = octets;
+  if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && (b === 0 || b === 168)) return false;
+  if (a === 192 && b === 88 && c === 99) return false;
+  if (a === 198 && (b === 18 || b === 19)) return false;
+  if (a === 198 && b === 51 && c === 100) return false;
+  if (a === 203 && b === 0 && c === 113) return false;
+  return true;
+}
+
+function parseIpv6Groups(address) {
+  if (typeof address !== 'string' || address.includes('%')) return null;
+  let value = address.toLowerCase();
+  if (value.includes('.')) {
+    const index = value.lastIndexOf(':');
+    const ipv4 = value.slice(index + 1);
+    if (index < 0 || net.isIP(ipv4) !== 4) return null;
+    const [a, b, c, d] = ipv4.split('.').map(Number);
+    value = `${value.slice(0, index)}:${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+
+  const parts = value.split('::');
+  if (parts.length > 2) return null;
+  const left = parts[0] ? parts[0].split(':') : [];
+  const right = parts.length === 2 && parts[1] ? parts[1].split(':') : [];
+  const groups = [
+    ...left,
+    ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'),
+    ...right,
+  ];
+  if (
+    groups.length !== 8 ||
+    groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))
+  ) {
+    return null;
+  }
+  return groups.map((group) => Number.parseInt(group, 16));
+}
+
+function isPublicIpv6(address) {
+  const groups = parseIpv6Groups(address);
+  if (!groups) return false;
+  const allZero = groups.every((group) => group === 0);
+  const loopback =
+    groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1;
+  const mappedIpv4 =
+    groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
+  if (allZero || loopback) return false;
+  if (mappedIpv4) {
+    return isPublicIpv4(
+      `${groups[6] >> 8}.${groups[6] & 0xff}.${groups[7] >> 8}.${groups[7] & 0xff}`
+    );
+  }
+  if ((groups[0] & 0xfe00) === 0xfc00) return false; // Unique local (fc00::/7)
+  if ((groups[0] & 0xffc0) === 0xfe80) return false; // Link-local (fe80::/10)
+  if ((groups[0] & 0xff00) === 0xff00) return false; // Multicast (ff00::/8)
+  return true;
+}
+
+function isPublicIpAddress(address) {
+  const family = net.isIP(address);
+  if (family === 4) return isPublicIpv4(address);
+  if (family === 6) return isPublicIpv6(address);
+  return false;
+}
+
+function destinationDenied() {
+  return new Error('Destination is not permitted.');
+}
+
+/**
+ * Resolves a hostname once, validates every returned address, and returns a
+ * verified address for the connector to use. Passing a resolved address rather
+ * than the hostname prevents a second DNS lookup from changing the target.
+ */
+async function assertPublicDestination(host, options = {}) {
+  const lookup = options.lookup || dns.lookup;
+  const allowPrivateIps = new Set(
+    (options.allowPrivateIps || []).map((address) =>
+      String(address).toLowerCase()
+    )
+  );
+  if (typeof host !== 'string' || host.trim() === '') throw destinationDenied();
+  const requested = host.trim();
+  const directFamily = net.isIP(requested);
+
+  if (directFamily) {
+    const explicitlyAllowedPrivate = allowPrivateIps.has(
+      requested.toLowerCase()
+    );
+    if (!isPublicIpAddress(requested) && !explicitlyAllowedPrivate) {
+      throw destinationDenied();
+    }
+    return { host: requested, address: requested, family: directFamily };
+  }
+
+  let resolved;
+  try {
+    resolved = await lookup(requested, { all: true, verbatim: true });
+  } catch {
+    throw destinationDenied();
+  }
+  const addresses = Array.isArray(resolved) ? resolved : [resolved];
+  if (
+    addresses.length === 0 ||
+    addresses.some((entry) => !isPublicIpAddress(entry?.address))
+  ) {
+    throw destinationDenied();
+  }
+
+  const [selected] = addresses;
+  return {
+    host: requested,
+    address: selected.address,
+    family: selected.family,
+  };
 }
 
 function validateHost(host) {
@@ -220,6 +347,8 @@ module.exports = {
   validatePort,
   validateUsername,
   validateHost,
+  isPublicIpAddress,
+  assertPublicDestination,
   validatePassword,
   validateBotConfig,
   validateChatMessage,

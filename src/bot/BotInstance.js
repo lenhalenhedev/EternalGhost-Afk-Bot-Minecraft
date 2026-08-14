@@ -130,7 +130,7 @@ class BotInstance extends EventEmitter {
 
     let bot;
     try {
-      bot = createMineflayerBot(this.record);
+      bot = await createMineflayerBot(this.record);
     } catch (err) {
       botLog(this.id, 'error', `createBot failed: ${err.message}`);
       this._setState(BOT_STATES.ERROR);

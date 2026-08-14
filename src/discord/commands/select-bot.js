@@ -16,33 +16,23 @@ const selectBot = {
     .setDescription('Chọn bot để điều khiển (dùng cho /start /stop /chat ...)')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
-      o
-        .setName('id')
-        .setDescription('Bot ID (8 ký tự đầu hoặc đầy đủ)')
-        .setRequired(true)
+      o.setName('id').setDescription('Full bot ID').setRequired(true)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const partial = interaction.options.getString('id').trim();
-    const match = BotManager.getAllBots().find(
-      (b) => b.id.startsWith(partial) || b.id === partial
-    );
-
-    if (!match) {
-      return interaction.editReply({
-        embeds: [errorEmbed(`Không tìm thấy bot \`${partial}\``)],
-      });
-    }
 
     try {
-      BotManager.setUserSelection(interaction.user.id, match.id);
+      const match = await BotManager.setUserSelection(
+        principal,
+        interaction.options.getString('id').trim()
+      );
       const r = match.record;
       await interaction.editReply({
         embeds: [
           successEmbed(
             'Bot Selected',
-            `Đã chọn **\`${r.username}\`**@\`${r.host}:${r.port}\`\nBot ID: \`${match.id.slice(0, 8)}\``
+            `Đã chọn **\`${r.username}\`**@\`${r.host}:${r.port}\`\nBot ID: \`${match.id}\``
           ),
         ],
       });

@@ -54,7 +54,7 @@ function encryptCredential(password) {
   }
 }
 
-function buildNewRecord(opts, createdBy) {
+function buildNewRecord(opts, createdBy, createdInGuild = null) {
   assertNoPollutingKeys(opts, 'createBot');
 
   const {
@@ -93,6 +93,7 @@ function buildNewRecord(opts, createdBy) {
     createdAt: now,
     updatedAt: now,
     createdBy,
+    createdInGuild,
     antiAfk: { ...DEFAULT_ANTIAFK },
     autoEat: { ...DEFAULT_AUTOEAT },
     combat: { ...DEFAULT_COMBAT },

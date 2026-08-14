@@ -15,23 +15,20 @@ module.exports = {
         .setRequired(false)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply();
 
-    const partial = interaction.options.getString('id')?.trim();
-    const instance = partial
-      ? BotManager.getAllBots().find(
-          (b) => b.id.startsWith(partial) || b.id === partial
-        )
-      : BotManager.getUserSelection(interaction.user.id);
-
-    if (!instance) {
-      const hint = partial
-        ? `Không tìm thấy bot \`${partial}\`.`
-        : 'Chưa chọn bot. Dùng `/select-bot` trước hoặc cung cấp ID.';
-      return interaction.editReply({ embeds: [errorEmbed(hint)] });
+    try {
+      const instance = BotManager.resolveAuthorizedBot(
+        principal,
+        interaction.options.getString('id')?.trim() || null,
+        { allowSelection: true }
+      );
+      await interaction.editReply({ embeds: [buildStatusEmbed(instance)] });
+    } catch {
+      await interaction.editReply({
+        embeds: [errorEmbed('Bot not found or access denied.')],
+      });
     }
-
-    await interaction.editReply({ embeds: [buildStatusEmbed(instance)] });
   },
 };

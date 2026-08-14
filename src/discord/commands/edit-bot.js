@@ -45,16 +45,20 @@ module.exports = {
         .setRequired(false)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const partial = interaction.options.getString('id').trim();
-    const instance = BotManager.getAllBots().find(
-      (b) => b.id.startsWith(partial) || b.id === partial
-    );
-    if (!instance) {
+    let instance;
+    try {
+      instance = BotManager.resolveAuthorizedBot(
+        principal,
+        interaction.options.getString('id').trim()
+      );
+    } catch (err) {
       return interaction.editReply({
-        embeds: [errorEmbed(`Không tìm thấy bot \`${partial}\``)],
+        embeds: [
+          errorEmbed(safeErrorMessage(err, 'Bot not found or access denied.')),
+        ],
       });
     }
 
@@ -89,7 +93,7 @@ module.exports = {
     }
 
     try {
-      await BotManager.editBot(instance.id, patch, interaction.user.id);
+      await BotManager.editBot(principal, instance.id, patch);
       const changed = Object.keys(patch)
         .filter((k) => k !== 'password')
         .join(', ');
@@ -97,7 +101,7 @@ module.exports = {
         embeds: [
           successEmbed(
             'Bot Updated',
-            `Đã cập nhật: \`${changed || 'password'}\`\nBot ID: \`${instance.id.slice(0, 8)}\``
+            `Đã cập nhật: \`${changed || 'password'}\`\nBot ID: \`${instance.id}\``
           ),
         ],
       });

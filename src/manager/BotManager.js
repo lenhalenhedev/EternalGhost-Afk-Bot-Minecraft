@@ -12,6 +12,39 @@ const config = require('../config');
 const RESTART_PAUSE_MS = 1_500;
 const SUMMARY_INTERVAL_MIN = 15;
 const SUMMARY_INTERVAL_BOUNDS = { min: 10, max: 30 };
+const CANONICAL_UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+class BotAccessError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'BotAccessError';
+    this.code = code;
+  }
+}
+
+function assertPrincipal(principal) {
+  const validUserId =
+    typeof principal?.userId === 'string' && principal.userId.trim() !== '';
+  const validGuildId =
+    principal?.guildId === null ||
+    principal?.guildId === undefined ||
+    (typeof principal?.guildId === 'string' && principal.guildId.trim() !== '');
+
+  if (!validUserId || !validGuildId || !Array.isArray(principal?.roles)) {
+    throw new BotAccessError(
+      'INVALID_PRINCIPAL',
+      'Invalid authenticated principal.'
+    );
+  }
+}
+
+function inaccessibleBotError() {
+  return new BotAccessError(
+    'RESOURCE_ACCESS_DENIED',
+    'Bot not found or access denied.'
+  );
+}
 
 /**
  * MEMORY LEAK FIXES:
@@ -92,8 +125,13 @@ class BotManager {
   }
 
   // ─── Bot lifecycle ───
-  async createBot(opts, createdBy) {
-    const record = buildNewRecord(opts, createdBy);
+  async createBot(opts, principal) {
+    assertPrincipal(principal);
+    const record = buildNewRecord(
+      opts,
+      principal.userId,
+      principal.guildId || null
+    );
     if (Persistence.findBot(record.host, record.port, record.username)) {
       throw new Error(
         `A bot for ${record.username}@${record.host}:${record.port} already exists.`
@@ -102,8 +140,7 @@ class BotManager {
     if (this._bots.size >= config.limits.maxBots) {
       throw new Error(`Maximum bot limit (${config.limits.maxBots}) reached.`);
     }
-    Persistence.saveBot(record);
-    Persistence.logActivity(record.id, 'created', createdBy, {
+    await Persistence.saveBotWithActivity(record, 'created', principal.userId, {
       username: record.username,
       host: record.host,
       port: record.port,
@@ -113,7 +150,7 @@ class BotManager {
     logger.info(
       `[BotManager] Bot created: ${record.id} (${record.username}@${record.host}:${record.port})`
     );
-    this._auditLog('Bot created', createdBy, {
+    this._auditLog('Bot created', principal.userId, {
       id: record.id,
       username: record.username,
       host: record.host,
@@ -123,86 +160,188 @@ class BotManager {
     return { id: record.id, record };
   }
 
-  async deleteBot(id, deletedBy) {
-    const instance = this._getBotOrThrow(id);
+  async deleteBot(principal, id) {
+    const instance = this.resolveAuthorizedBot(principal, id);
+    await Persistence.deleteBotWithActivity(
+      instance.id,
+      'deleted',
+      principal.userId
+    );
     await instance.destroy();
-    this._bots.delete(id);
-    Persistence.logActivity(id, 'deleted', deletedBy, {});
-    Persistence.deleteBot(id);
-    // FIX: Clear all per-bot in-memory state to prevent leaks after deletion.
-    // This releases the log ring buffer, alert cooldown entries, and any other
-    // per-bot state that would otherwise persist forever in memory.
-    clearBotState(id);
-    logger.info(`[BotManager] Bot deleted: ${id} by ${deletedBy}`);
-    this._auditLog('Bot deleted', deletedBy, { id });
+    this._bots.delete(instance.id);
+    // Clear all per-bot in-memory state after the record is no longer active.
+    clearBotState(instance.id);
+    logger.info(
+      `[BotManager] Bot deleted: ${instance.id} by ${principal.userId}`
+    );
+    this._auditLog('Bot deleted', principal.userId, { id: instance.id });
   }
 
-  async startBot(id) {
-    await this._getBotOrThrow(id).start();
-    Persistence.updateBotState(id, { wasRunning: true });
-    Persistence.logActivity(id, 'started', null, {});
+  async startBot(principal, id) {
+    const instance = this.resolveAuthorizedBot(principal, id);
+    await instance.start();
+    await this._recordLifecycleState(
+      instance,
+      { wasRunning: true },
+      'started',
+      principal.userId,
+      () => instance.stop(true)
+    );
   }
 
-  async stopBot(id, force = false) {
-    await this._getBotOrThrow(id).stop(force);
-    Persistence.updateBotState(id, { wasRunning: false });
-    Persistence.logActivity(id, 'stopped', null, { force });
+  async stopBot(principal, id, force = false) {
+    const instance = this.resolveAuthorizedBot(principal, id);
+    await instance.stop(force);
+    await this._recordLifecycleState(
+      instance,
+      { wasRunning: false },
+      'stopped',
+      principal.userId,
+      () => instance.start(),
+      { force }
+    );
   }
 
-  async restartBot(id) {
-    const instance = this._getBotOrThrow(id);
+  async restartBot(principal, id) {
+    const instance = this.resolveAuthorizedBot(principal, id);
     await instance.stop(true);
     await new Promise((r) => setTimeout(r, RESTART_PAUSE_MS));
     await instance.start();
-    Persistence.updateBotState(id, { wasRunning: true });
+    await this._recordLifecycleState(
+      instance,
+      { wasRunning: true },
+      'restarted',
+      principal.userId
+    );
   }
 
-  async editBot(id, patch, editedBy) {
-    const instance = this._getBotOrThrow(id);
+  async editBot(principal, id, patch) {
+    const instance = this.resolveAuthorizedBot(principal, id);
     const allowed = buildEditPatch(instance.record, patch);
+    const updatedRecord = { ...instance.record, ...allowed };
+    await Persistence.saveBotWithActivity(
+      updatedRecord,
+      'edited',
+      principal.userId,
+      {
+        changes: Object.keys(allowed),
+      }
+    );
     Object.assign(instance.record, allowed);
-    Persistence.saveBot(instance.record);
-    Persistence.logActivity(id, 'edited', editedBy, {
-      changes: Object.keys(allowed),
-    });
-    logger.info(`[BotManager] Bot edited: ${id} by ${editedBy}`);
-    this._auditLog('Bot edited', editedBy, {
-      id,
+    logger.info(
+      `[BotManager] Bot edited: ${instance.id} by ${principal.userId}`
+    );
+    this._auditLog('Bot edited', principal.userId, {
+      id: instance.id,
       changes: Object.keys(allowed),
     });
   }
 
-  async chatBot(id, message) {
-    await this._getBotOrThrow(id).chat(message);
+  async chatBot(principal, id, message) {
+    await this.resolveAuthorizedBot(principal, id).chat(message);
   }
 
   // ─── Queries ───
-  getBot(id) {
-    return this._bots.get(id) || null;
+  /**
+   * Resolve a command-visible bot only after principal and exact target checks.
+   * A missing, stale, foreign, or otherwise inaccessible target has one generic
+   * response so callers cannot use this boundary as a resource-existence oracle.
+   */
+  resolveAuthorizedBot(
+    principal,
+    requestedId,
+    { allowSelection = false } = {}
+  ) {
+    assertPrincipal(principal);
+
+    let botId = requestedId;
+    if (botId === null || botId === undefined || String(botId).trim() === '') {
+      if (!allowSelection) throw inaccessibleBotError();
+      botId = Persistence.getUserSelection(principal.userId);
+    }
+
+    if (typeof botId !== 'string' || !CANONICAL_UUID_V4.test(botId)) {
+      if (
+        requestedId === null ||
+        requestedId === undefined ||
+        String(requestedId).trim() === ''
+      ) {
+        throw inaccessibleBotError();
+      }
+      throw new BotAccessError(
+        'INVALID_BOT_ID',
+        'A full canonical bot ID is required.'
+      );
+    }
+
+    const bot = this._bots.get(botId);
+    if (!bot || !this._principalOwnsRecord(principal, bot.record)) {
+      throw inaccessibleBotError();
+    }
+    return bot;
   }
 
-  getAllBots() {
-    return [...this._bots.values()];
+  _principalOwnsRecord(principal, record) {
+    if (!record || record.createdBy !== principal.userId) return false;
+    return (
+      !record.createdInGuild || record.createdInGuild === principal.guildId
+    );
   }
 
-  getUserSelection(userId) {
-    const botId = Persistence.getUserSelection(userId);
-    if (!botId) return null;
-    return this._bots.get(botId) || null;
+  async _recordLifecycleState(
+    instance,
+    patch,
+    action,
+    actor,
+    compensate,
+    meta = {}
+  ) {
+    try {
+      await Persistence.updateBotStateWithActivity(
+        instance.id,
+        patch,
+        action,
+        actor,
+        meta
+      );
+    } catch (error) {
+      if (compensate) {
+        await compensate().catch(() => {
+          logger.error(
+            `[BotManager] Lifecycle compensation failed for ${instance.id}.`
+          );
+        });
+      }
+      throw error;
+    }
   }
 
-  setUserSelection(userId, botId) {
-    if (!this._bots.has(botId)) throw new Error(`Bot ${botId} not found.`);
-    Persistence.setUserSelection(userId, botId);
+  listAuthorizedBots(principal) {
+    assertPrincipal(principal);
+    return [...this._bots.values()].filter((bot) =>
+      this._principalOwnsRecord(principal, bot.record)
+    );
   }
 
-  resolveBotForUser(botIdOrNull, userId) {
-    if (botIdOrNull) return this.getBot(botIdOrNull);
-    return this.getUserSelection(userId);
+  getUserSelection(principal) {
+    try {
+      return this.resolveAuthorizedBot(principal, null, {
+        allowSelection: true,
+      });
+    } catch (err) {
+      if (err?.code === 'RESOURCE_ACCESS_DENIED') return null;
+      throw err;
+    }
   }
 
-  getStats() {
-    return computeStats(this.getAllBots());
+  async setUserSelection(principal, botId) {
+    const instance = this.resolveAuthorizedBot(principal, botId);
+    await Persistence.setUserSelection(principal.userId, instance.id);
+    return instance;
+  }
+
+  getStats(principal) {
+    return computeStats(this.listAuthorizedBots(principal));
   }
 
   // ─── Internal ───
@@ -211,12 +350,6 @@ class BotManager {
     this._bots.set(record.id, instance);
     attachInstanceEvents(instance, this._notifier);
     return instance;
-  }
-
-  _getBotOrThrow(id) {
-    const bot = this._bots.get(id);
-    if (!bot) throw new Error(`Bot ${id} not found.`);
-    return bot;
   }
 
   _auditLog(action, userId, meta = {}) {

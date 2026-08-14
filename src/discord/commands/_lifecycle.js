@@ -9,22 +9,13 @@ const { successEmbed, errorEmbed } = require('../embeds');
 const { logger } = require('../../services/logger');
 const { safeErrorMessage } = require('../safeError');
 
-/** Resolve bot: by ID arg → fallback to user selection */
-function resolveBot(interaction) {
-  const partial = interaction.options.getString('id')?.trim();
-  if (partial) {
-    const match = BotManager.getAllBots().find(
-      (b) => b.id.startsWith(partial) || b.id === partial
-    );
-    if (!match) throw new Error(`Không tìm thấy bot \`${partial}\``);
-    return match;
-  }
-  const sel = BotManager.getUserSelection(interaction.user.id);
-  if (!sel)
-    throw new Error(
-      'Chưa chọn bot. Dùng `/select-bot` trước hoặc cung cấp ID.'
-    );
-  return sel;
+/** Resolve a command target by canonical ID or the caller's authorized selection. */
+function resolveBot(interaction, principal) {
+  return BotManager.resolveAuthorizedBot(
+    principal,
+    interaction.options.getString('id')?.trim() || null,
+    { allowSelection: true }
+  );
 }
 
 // ── /start ────────────────────────────────────────────────────────────────────
@@ -40,11 +31,11 @@ const startCmd = {
         .setRequired(false)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
-      const instance = resolveBot(interaction);
-      await BotManager.startBot(instance.id);
+      const instance = resolveBot(interaction, principal);
+      await BotManager.startBot(principal, instance.id);
       await interaction.editReply({
         embeds: [
           successEmbed(
@@ -81,12 +72,12 @@ const stopCmd = {
         .setRequired(false)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
-      const instance = resolveBot(interaction);
+      const instance = resolveBot(interaction, principal);
       const force = interaction.options.getBoolean('force') ?? false;
-      await BotManager.stopBot(instance.id, force);
+      await BotManager.stopBot(principal, instance.id, force);
       await interaction.editReply({
         embeds: [
           successEmbed(
@@ -117,14 +108,14 @@ const restartCmd = {
         .setRequired(false)
     ),
 
-  async execute(interaction) {
+  async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
-      const instance = resolveBot(interaction);
+      const instance = resolveBot(interaction, principal);
       await interaction.editReply({
         content: `🔄 Đang restart bot \`${instance.record.username}\`...`,
       });
-      await BotManager.restartBot(instance.id);
+      await BotManager.restartBot(principal, instance.id);
       // Edit after restart completes
       await interaction.editReply({
         embeds: [

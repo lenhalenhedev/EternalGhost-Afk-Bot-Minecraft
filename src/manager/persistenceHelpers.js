@@ -66,6 +66,7 @@ function recordFromRow(row, antiAfkRow, autoEatRow, combatRow) {
     wasRunning: row.was_running,
     hidden: row.hidden,
     createdBy: row.created_by,
+    createdInGuild: row.created_in_guild || null,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
     antiAfk: antiAfkFromRow(antiAfkRow),

@@ -2,6 +2,7 @@
 
 const { EmbedBuilder } = require('discord.js');
 const { logger } = require('../services/logger');
+const { redactDiagnostic } = require('../utils/security');
 
 const EMBED_DESCRIPTION_LIMIT = 4_000;
 
@@ -60,7 +61,9 @@ class DiscordNotifier {
       const embed = new EmbedBuilder()
         .setColor(0xe74c3c)
         .setTitle(`${emoji} Bot Alert \u2014 ${type}`)
-        .setDescription(message)
+        .setDescription(
+          redactDiagnostic(message).slice(0, EMBED_DESCRIPTION_LIMIT)
+        )
         .addFields(
           {
             name: 'Bot',
@@ -86,13 +89,19 @@ class DiscordNotifier {
     try {
       const channel = await this._fetchTextChannel(this._logTarget());
       if (!channel) return;
-      const detail = (err && (err.stack || err.message)) || String(err);
+      const detail = redactDiagnostic(
+        (err && (err.stack || err.message)) || String(err)
+      );
       const embed = new EmbedBuilder()
         .setColor(0xc0392b)
         .setTitle('\u{1F6A8} Bot Error')
         .setDescription(`\`\`\`\n${String(detail).slice(0, 1_800)}\n\`\`\``)
         .addFields(
-          { name: 'Context', value: context || 'runtime error', inline: false },
+          {
+            name: 'Context',
+            value: redactDiagnostic(context || 'runtime error').slice(0, 1_000),
+            inline: false,
+          },
           {
             name: 'Bot',
             value: `\`${instance.record.username}\`@\`${instance.record.host}:${instance.record.port}\``,
@@ -122,7 +131,9 @@ class DiscordNotifier {
       const embed = new EmbedBuilder()
         .setColor(0x3498db)
         .setTitle('\u{1F4CB} System Log Summary')
-        .setDescription(summary.slice(0, EMBED_DESCRIPTION_LIMIT))
+        .setDescription(
+          redactDiagnostic(summary).slice(0, EMBED_DESCRIPTION_LIMIT)
+        )
         .setTimestamp();
       await channel.send({ embeds: [embed] });
     } catch (err) {
@@ -142,7 +153,7 @@ class DiscordNotifier {
           { name: 'User ID', value: userId, inline: true },
           {
             name: 'Details',
-            value: `\`\`\`json\n${JSON.stringify(meta, null, 2)}\n\`\`\``,
+            value: `\`\`\`json\n${redactDiagnostic(meta).slice(0, 900)}\n\`\`\``,
           }
         )
         .setTimestamp();
