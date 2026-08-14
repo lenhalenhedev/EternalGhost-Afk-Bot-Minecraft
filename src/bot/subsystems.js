@@ -3,6 +3,7 @@ const AntiAFK = require('./AntiAFK');
 const Combat = require('./Combat');
 const Inventory = require('./Inventory');
 const AutoEat = require('./AutoEat');
+const FoodFinder = require('../services/foodFinder');
 
 class Subsystems {
   constructor(id) {
@@ -11,6 +12,7 @@ class Subsystems {
     this.combat = null;
     this.inventory = null;
     this.autoEat = null;
+    this.foodFinder = null;
   }
 
   startPlaying(bot, emit, cfg = {}) {
@@ -18,10 +20,24 @@ class Subsystems {
       this.autoEat.stop();
       this.autoEat = null;
     }
+    if (this.foodFinder) {
+      this.foodFinder.stop();
+      this.foodFinder = null;
+    }
     this.inventory = null;
 
     this.inventory = new Inventory(bot, this.id, emit);
-    this.autoEat = new AutoEat(bot, this.id, emit, cfg.autoEat);
+    this.foodFinder = new FoodFinder(bot, this.id);
+    this.foodFinder.start();
+    this.autoEat = new AutoEat(
+      bot,
+      this.id,
+      (event, ...args) => {
+        emit(event, ...args);
+        if (event === 'noFood') this.foodFinder?.onNoFood();
+      },
+      cfg.autoEat
+    );
     this.autoEat.start();
   }
 
@@ -43,11 +59,13 @@ class Subsystems {
   enterCombat() {
     if (this.antiAFK) this.antiAFK.pauseForCombat();
     if (this.autoEat) this.autoEat.setCombat(true);
+    if (this.foodFinder) this.foodFinder.stop();
   }
 
   exitCombat() {
     if (this.antiAFK) this.antiAFK.resumeAfterCombat();
     if (this.autoEat) this.autoEat.setCombat(false);
+    if (this.foodFinder) this.foodFinder.start();
   }
 
   stopAll() {
@@ -62,6 +80,10 @@ class Subsystems {
     if (this.autoEat) {
       this.autoEat.stop();
       this.autoEat = null;
+    }
+    if (this.foodFinder) {
+      this.foodFinder.stop();
+      this.foodFinder = null;
     }
     this.inventory = null;
   }

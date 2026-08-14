@@ -38,10 +38,22 @@ const FOOD_PRIORITY = Object.freeze([
 ]);
 
 function foodScore(item) {
-  if (!item) return -1;
+  if (!item || typeof item.name !== 'string') return -1;
   const name = item.name.toLowerCase();
-  const idx = FOOD_PRIORITY.findIndex((f) => name.includes(f));
+  const idx = FOOD_PRIORITY.findIndex((foodName) => name.includes(foodName));
   return idx === -1 ? -1 : FOOD_PRIORITY.length - idx;
+}
+
+function itemCount(item) {
+  return Number.isFinite(item?.count) ? item.count : 0;
+}
+
+function isFoodAcquired(oldItem, newItem) {
+  if (foodScore(newItem) < 0 || itemCount(newItem) <= 0) return false;
+  if (foodScore(oldItem) < 0) return true;
+  if (oldItem.type !== newItem.type || oldItem.metadata !== newItem.metadata)
+    return true;
+  return itemCount(newItem) > itemCount(oldItem);
 }
 
 function intOr(value, fallback, bounds) {
@@ -73,12 +85,15 @@ class AutoEat {
     this._lastEat = 0;
     this._inCombat = false;
     this._checker = null;
+    this._collectionCheck = null;
+    this._listenersBound = false;
+    this._onInventoryUpdate = this._handleInventoryUpdate.bind(this);
+    this._onPlayerCollect = this._handlePlayerCollect.bind(this);
   }
 
   start() {
-    if (this._checker) {
-      clearInterval(this._checker);
-    }
+    if (this._checker) clearInterval(this._checker);
+    this._bindItemListeners();
     this._checker = setInterval(() => {
       this._check().catch((err) =>
         botLog(this.botId, 'warn', `AutoEat check error: ${err.message}`)
@@ -88,8 +103,11 @@ class AutoEat {
   }
 
   stop() {
-    clearInterval(this._checker);
+    if (this._checker) clearInterval(this._checker);
     this._checker = null;
+    if (this._collectionCheck) clearImmediate(this._collectionCheck);
+    this._collectionCheck = null;
+    this._unbindItemListeners();
     this._eating = false;
   }
 
@@ -112,10 +130,52 @@ class AutoEat {
     await this._eat(food);
   }
 
+  _bindItemListeners() {
+    if (this._listenersBound) return;
+    this.bot.inventory?.on?.('updateSlot', this._onInventoryUpdate);
+    this.bot.on?.('playerCollect', this._onPlayerCollect);
+    this._listenersBound = true;
+  }
+
+  _unbindItemListeners() {
+    if (!this._listenersBound) return;
+    this.bot.inventory?.removeListener?.('updateSlot', this._onInventoryUpdate);
+    this.bot.removeListener?.('playerCollect', this._onPlayerCollect);
+    this._listenersBound = false;
+  }
+
+  _handleInventoryUpdate(_slot, oldItem, newItem) {
+    if (!isFoodAcquired(oldItem, newItem)) return;
+    this._enableIfFoodAvailable();
+  }
+
+  _handlePlayerCollect(collector) {
+    if (!this._isBotCollector(collector) || this._collectionCheck) return;
+    this._collectionCheck = setImmediate(() => {
+      this._collectionCheck = null;
+      if (this._checker) this._enableIfFoodAvailable();
+    });
+  }
+
+  _isBotCollector(collector) {
+    if (!collector) return false;
+    if (collector === this.bot.entity) return true;
+    if (collector.id != null && collector.id === this.bot.entity?.id)
+      return true;
+    return collector.username === this.bot.username;
+  }
+
+  _enableIfFoodAvailable() {
+    if (this._enabled || !this._findBestFood()) return;
+    this.enable();
+  }
+
   _findBestFood() {
     let bestItem = null;
     let bestScore = -1;
-    for (const item of this.bot.inventory.items()) {
+    const items = this.bot.inventory?.items?.() ?? [];
+    for (const item of items) {
+      if (itemCount(item) <= 0) continue;
       const score = foodScore(item);
       if (score > bestScore) {
         bestScore = score;
@@ -153,6 +213,10 @@ class AutoEat {
 
   get enabled() {
     return this._enabled;
+  }
+
+  static isFood(item) {
+    return foodScore(item) >= 0 && itemCount(item) > 0;
   }
 }
 
