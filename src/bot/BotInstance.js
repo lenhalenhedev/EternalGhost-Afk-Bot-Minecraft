@@ -50,6 +50,7 @@ class BotInstance extends EventEmitter {
     this._lastHealthTick = 0;
     this._respawnHandler = null;
     this._abort = null;
+    this._connectGeneration = 0;
     this._destroyed = false;
   }
 
@@ -115,11 +116,18 @@ class BotInstance extends EventEmitter {
   async _connect() {
     if (this._destroyed) return;
 
+    const generation = ++this._connectGeneration;
     this._teardownConnection();
 
     this._lastHealthTick = 0;
     this._respawnHandler = null;
     this._abort = new AbortController();
+    const abortController = this._abort;
+    const isCurrentConnection = () =>
+      !this._destroyed &&
+      this._connectGeneration === generation &&
+      this._abort === abortController &&
+      !abortController.signal.aborted;
     this._setState(BOT_STATES.CONNECTING);
     botLog(
       this.id,
@@ -132,10 +140,21 @@ class BotInstance extends EventEmitter {
     try {
       bot = await createMineflayerBot(this.record);
     } catch (err) {
+      if (!isCurrentConnection()) return;
       botLog(this.id, 'error', `createBot failed: ${err.message}`);
       this._setState(BOT_STATES.ERROR);
       return;
     }
+
+    if (!isCurrentConnection()) {
+      try {
+        bot.end();
+      } catch {
+        /* ignore stale connection teardown errors */
+      }
+      return;
+    }
+
     this._bot = bot;
     this._auth.reset();
 
