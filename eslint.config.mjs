@@ -6,7 +6,7 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 
 export default defineConfig([
   {
-    ignores: ['package-lock.json'],
+    ignores: ['package-lock.json', 'logs/**', 'data/**'],
   },
   {
     files: ['**/*.{js,mjs,cjs}'],
