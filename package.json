@@ -1,6 +1,6 @@
 {
   "name": "EternalGhost-Afk-Bot-Minecraft",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "description": "Discord-managed multi-Minecraft AFK bot system",
   "main": "index.js",
   "scripts": {
