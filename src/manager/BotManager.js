@@ -282,10 +282,18 @@ class BotManager {
   }
 
   _principalOwnsRecord(principal, record) {
-    if (!record || record.createdBy !== principal.userId) return false;
+    if (!record) return false;
+    if (principal.roles?.includes('web-admin')) return true;
+    if (record.createdBy !== principal.userId) return false;
     return (
       !record.createdInGuild || record.createdInGuild === principal.guildId
     );
+  }
+
+  getPublicSnapshots() {
+    return [...this._bots.values()]
+      .filter((bot) => !bot.record.hidden)
+      .map((bot) => bot.toJSON());
   }
 
   async _recordLifecycleState(

@@ -24,7 +24,8 @@
 8. [The `buildEditPatch` Payload Semantics](#the-buildeditpatch-payload-semantics)
 9. [Testing & Quality Assurance](#testing--quality-assurance)
 10. [Operational Notes](#operational-notes)
-11. [License](#license)
+11. [Web Admin Control Plane](#web-admin-control-plane)
+12. [License](#license)
 
 ---
 
@@ -304,6 +305,29 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 | ---------------- | :------: | -------------------------------------------------------------------------- |
 | `ADMIN_USER_IDS` |   Yes    | Comma-separated Discord user IDs permitted to invoke commands (no spaces). |
 
+### Web Admin (HTTP)
+
+The optional web control plane is enabled with `WEB_ENABLED=true` and binds to `WEB_HOST`/`WEB_PORT`. Use `0.0.0.0` when the service must accept localhost and public-IP traffic. This project intentionally serves plain HTTP because it is designed for local operation; do not expose the login endpoint directly to the public Internet without placing it behind a TLS reverse proxy.
+
+`WEB_ADMIN_USERNAME` is stored as configured, while `WEB_ADMIN_PASSWORD_SHA256` must contain only the lowercase 64-character SHA-256 digest of the password. The web server uses an expiring in-memory, `httpOnly` session cookie and a CSRF header for mutations. The password hash, session token, encrypted Minecraft credentials, Discord token, and database credentials never enter `src/web/public` or API responses.
+
+| Variable                                         |   Required   | Description                                                   |
+| ------------------------------------------------ | :----------: | ------------------------------------------------------------- |
+| `WEB_ENABLED`                                    |      No      | Enables the HTTP web server; default `true`.                  |
+| `WEB_HOST`                                       |      No      | Bind address; default `0.0.0.0`.                              |
+| `WEB_PORT`                                       |      No      | HTTP port; default `3000`.                                    |
+| `WEB_ADMIN_USERNAME`                             | When enabled | Single web admin username.                                    |
+| `WEB_ADMIN_PASSWORD_SHA256`                      | When enabled | Lowercase SHA-256 password digest, exactly 64 hex characters. |
+| `WEB_SESSION_TTL_MS`                             |      No      | Session lifetime; default eight hours.                        |
+| `WEB_LOGIN_WINDOW_MS` / `WEB_LOGIN_MAX_ATTEMPTS` |      No      | Login failure rate-limit window and maximum attempts.         |
+| `WEB_MAX_BODY_BYTES`                             |      No      | Maximum JSON request body size; default 64 KiB.               |
+
+Generate the digest outside the application process and place it only in `.env`:
+
+```bash
+printf %s 'your-password' | sha256sum
+```
+
 ### Encryption & Key Rotation
 
 | Variable             | Required | Description                                                                                        |
@@ -315,18 +339,18 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 
 ### Database (PostgreSQL)
 
-| Variable                        | Required | Description                                                          |
-| ------------------------------- | :------: | -------------------------------------------------------------------- |
-| `DATABASE_URL`                  |   No*    | Full connection string; must not contain SSL parameters, which could override verified TLS. |
-| `PGHOST` / `PGPORT`             |   No*    | Host and port (used when `DATABASE_URL` is empty).                   |
-| `PGUSER` / `PGPASSWORD`         |   No*    | Database credentials.                                                |
-| `PGDATABASE`                    |   No*    | Target database name.                                                |
-| `DB_SSL`                        | Remote: Yes | Must be `true` for every non-loopback database.                    |
-| `DB_SSL_REJECT_UNAUTHORIZED`    | Remote: Yes | Must be `true`; unverified certificates are not supported.         |
-| `DB_SSL_CERT_PATH`              | Remote: Yes | Readable, valid CA PEM used to verify the database certificate.    |
-| `DB_POOL_MAX` / `DB_POOL_MIN`   |    No    | Connection-pool sizing.                                              |
-| `DB_POOL_IDLE_TIMEOUT_MS`       |    No    | Idle connection eviction timeout.                                    |
-| `DB_POOL_CONNECTION_TIMEOUT_MS` |    No    | Connection acquisition timeout.                                      |
+| Variable                        |  Required   | Description                                                                                 |
+| ------------------------------- | :---------: | ------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  |     No*     | Full connection string; must not contain SSL parameters, which could override verified TLS. |
+| `PGHOST` / `PGPORT`             |     No*     | Host and port (used when `DATABASE_URL` is empty).                                          |
+| `PGUSER` / `PGPASSWORD`         |     No*     | Database credentials.                                                                       |
+| `PGDATABASE`                    |     No*     | Target database name.                                                                       |
+| `DB_SSL`                        | Remote: Yes | Must be `true` for every non-loopback database.                                             |
+| `DB_SSL_REJECT_UNAUTHORIZED`    | Remote: Yes | Must be `true`; unverified certificates are not supported.                                  |
+| `DB_SSL_CERT_PATH`              | Remote: Yes | Readable, valid CA PEM used to verify the database certificate.                             |
+| `DB_POOL_MAX` / `DB_POOL_MIN`   |     No      | Connection-pool sizing.                                                                     |
+| `DB_POOL_IDLE_TIMEOUT_MS`       |     No      | Idle connection eviction timeout.                                                           |
+| `DB_POOL_CONNECTION_TIMEOUT_MS` |     No      | Connection acquisition timeout.                                                             |
 
 > **Transport policy.** All non-loopback PostgreSQL instances require a CA-backed TLS connection with `rejectUnauthorized: true`. Only `localhost`, `127.0.0.0/8`, and `::1` may use plaintext for local development. `DATABASE_URL` TLS query parameters are rejected to prevent accidental downgrade.
 
@@ -334,16 +358,39 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 
 ### Storage & Operational Limits
 
-| Variable                   | Default  | Description                                             |
-| -------------------------- | -------- | ------------------------------------------------------- |
-| `LOG_DIR`                  | `./logs` | Directory for rotating log files.                       |
-| `LOG_LEVEL`                | `info`   | Winston log level.                                      |
-| `MAX_BOTS`                 | `50`     | Maximum concurrent bot instances.                       |
-| `BOT_QUEUE_SIZE`           | `100`    | Per-bot task-queue depth.                               |
-| `BOT_QUEUE_TIMEOUT`        | `10000`  | Per-task timeout in milliseconds.                       |
-| `LOG_SUMMARY_INTERVAL_MIN` | `15`     | Discord log-summary cadence in minutes (bounded 10–30). |
-| `MINECRAFT_VIEW_DISTANCE`  | `4`      | Requested chunk view distance (bounded 2–16).           |
-| `MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST` | empty | Exact private IPv4/IPv6 literals explicitly approved for Minecraft only; hostnames are not accepted. |
+| Variable                                  | Default  | Description                                                                                          |
+| ----------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `LOG_DIR`                                 | `./logs` | Directory for rotating log files.                                                                    |
+| `LOG_LEVEL`                               | `info`   | Winston log level.                                                                                   |
+| `MAX_BOTS`                                | `50`     | Maximum concurrent bot instances.                                                                    |
+| `BOT_QUEUE_SIZE`                          | `100`    | Per-bot task-queue depth.                                                                            |
+| `BOT_QUEUE_TIMEOUT`                       | `10000`  | Per-task timeout in milliseconds.                                                                    |
+| `LOG_SUMMARY_INTERVAL_MIN`                | `15`     | Discord log-summary cadence in minutes (bounded 10–30).                                              |
+| `MINECRAFT_VIEW_DISTANCE`                 | `4`      | Requested chunk view distance (bounded 2–16).                                                        |
+| `MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST` | empty    | Exact private IPv4/IPv6 literals explicitly approved for Minecraft only; hostnames are not accepted. |
+
+---
+
+## Web Admin Control Plane
+
+The web surface is split deliberately: server-only handlers live under `src/web/private`, while `src/web/public` contains only the static HTML, CSS, and browser JavaScript. The browser cannot request private files because the HTTP server exposes an allowlisted static path and rejects traversal attempts.
+
+| Web path                                     | Purpose                                  |             Auth             |
+| -------------------------------------------- | ---------------------------------------- | :--------------------------: |
+| `/`                                          | Portal with links to status and admin    |              No              |
+| `/status`                                    | Raw JSON fleet status                    |              No              |
+| `/admin`                                     | Login and admin command deck             |           Session            |
+| `/api/bots`                                  | List/create bots; `PATCH`/`DELETE` by ID | Session + CSRF for mutations |
+| `/api/bots/:id/start`, `/stop`, `/restart`   | Lifecycle controls                       |        Session + CSRF        |
+| `/api/bots/:id/chat`                         | Safe chat relay                          |        Session + CSRF        |
+| `/api/bots/:id/status`, `/logs`, `/activity` | Live status and bounded observability    |           Session            |
+| `/api/stats`, `/api/help`                    | Fleet statistics and command map         |           Session            |
+
+The admin deck provides the web equivalents of `/create-bot`, `/edit-bot`, `/delete-bot`, `/start`, `/stop`, `/restart`, `/chat`, `/list-bot`, `/status-bot`, `/stats`, `/logs-bot`, `/select-bot`, and `/help`. It invokes the same `BotManager`, validators, encryption, persistence, and log-buffer code used by Discord rather than maintaining a second business-logic implementation.
+
+Direct configuration of anti-AFK, auto-eat, or combat tuning is not exposed because the current Discord command set has no corresponding configuration commands. Those settings remain persisted and operational through the existing bot system; adding a web editor for them requires an explicit field and semantics review.
+
+For the full API contract and security model, see [`docs/web-spec.md`](docs/web-spec.md). The implementation and test checklist is in [`tasks/plan.md`](tasks/plan.md) and [`tasks/todo.md`](tasks/todo.md).
 
 ---
 

@@ -6,6 +6,8 @@ const BotManager = require('./src/manager/BotManager');
 const client = require('./src/discord/client');
 const db = require('./src/config/database');
 const dbPingCron = require('./src/utils/CronJob');
+const { createWebServer } = require('./src/web/private/server');
+const webServer = createWebServer();
 
 let shuttingDown = false;
 let lifecycleHandlersRegistered = false;
@@ -25,6 +27,7 @@ async function shutdown(signal, exitCode = 0) {
   logger.info(`[Main] Received ${signal}. Graceful shutdown...`);
   try {
     dbPingCron.stop();
+    await webServer.stop();
     await BotManager.shutdown();
     await client.destroy();
     await db.close();
@@ -84,6 +87,7 @@ async function main() {
   dbPingCron.start();
 
   await BotManager.initialize();
+  await webServer.start();
   await client.login(config.discord.token);
 }
 

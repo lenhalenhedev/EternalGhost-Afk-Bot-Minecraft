@@ -9,6 +9,7 @@
     "test": "node --test",
     "db:schema": "psql \"$DATABASE_URL\" -f db/schema.sql",
     "lint": "eslint .",
+    "format:check": "prettier --check .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write ."
   },

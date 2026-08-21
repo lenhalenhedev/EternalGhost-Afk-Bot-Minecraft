@@ -20,6 +20,14 @@ function intEnv(key, fallback, bounds = {}) {
   return parsed.valid ? parsed.value : fallback;
 }
 
+function boolEnv(key, fallback) {
+  const value = optionalEnv(key, fallback ? 'true' : 'false').toLowerCase();
+  if (value !== 'true' && value !== 'false') {
+    throw new Error(`${key} must be true or false`);
+  }
+  return value === 'true';
+}
+
 function ipListEnv(key) {
   const values = optionalEnv(key)
     .split(',')
@@ -100,6 +108,21 @@ try {
       queueSize: intEnv('BOT_QUEUE_SIZE', 100, { min: 1 }),
       queueTimeout: intEnv('BOT_QUEUE_TIMEOUT', 10_000, { min: 1 }),
       logSummaryIntervalMin: intEnv('LOG_SUMMARY_INTERVAL_MIN', 15, { min: 1 }),
+    },
+    web: {
+      enabled: boolEnv('WEB_ENABLED', true),
+      host: optionalEnv('WEB_HOST', '0.0.0.0'),
+      port: intEnv('WEB_PORT', 3000, { min: 1, max: 65535 }),
+      username: optionalEnv('WEB_ADMIN_USERNAME'),
+      passwordHash: optionalEnv('WEB_ADMIN_PASSWORD_SHA256').toLowerCase(),
+      sessionTtlMs: intEnv('WEB_SESSION_TTL_MS', 8 * 60 * 60 * 1000, {
+        min: 60_000,
+      }),
+      loginWindowMs: intEnv('WEB_LOGIN_WINDOW_MS', 15 * 60 * 1000, {
+        min: 1_000,
+      }),
+      loginMaxAttempts: intEnv('WEB_LOGIN_MAX_ATTEMPTS', 10, { min: 1 }),
+      maxBodyBytes: intEnv('WEB_MAX_BODY_BYTES', 64 * 1024, { min: 1_024 }),
     },
   };
 } catch (err) {
