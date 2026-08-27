@@ -66,3 +66,14 @@ test('the frontend defines a dark root palette and log-specific dark colors', ()
   assert.match(tokens, /'log-bg':/);
   assert.match(tokens, /canvas:\s*'#0F1115'/);
 });
+
+test('all page layouts render the shared natural-flow copyright footer', () => {
+  const footerSource = read('web/src/components/Footer.jsx');
+  const appSource = read('web/src/App.jsx');
+  const loginSource = read('web/src/pages/LoginPage.jsx');
+
+  assert.match(footerSource, /Copyright © 2026 lenhalenhedev/);
+  assert.match(appSource, /<Footer\s*\/>/);
+  assert.match(loginSource, /<Footer\s*\/>/);
+  assert.doesNotMatch(footerSource, /fixed|sticky/);
+});

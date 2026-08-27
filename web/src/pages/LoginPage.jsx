@@ -3,6 +3,7 @@ import { LogIn } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { api, errorMessage } from '../lib/api';
 import { useDashboardStore } from '../state/dashboardStore';
+import { Footer } from '../components/Footer';
 
 export function LoginPage() {
   const [token, setToken] = useState('');
@@ -30,53 +31,58 @@ export function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
-      <section className="panel w-full max-w-md p-6 sm:p-8">
-        <div className="mb-8">
-          <div className="text-sm font-semibold text-accent">EternalGhost</div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-            Sign in to Dashboard
-          </h1>
-          <p className="mt-2 text-sm text-text-secondary">
-            Paste the JWT token sent by the Discord bot.
+    <main className="flex min-h-screen flex-col bg-canvas px-4">
+      <div className="flex flex-1 items-center justify-center py-8">
+        <section className="panel w-full max-w-md p-6 sm:p-8">
+          <div className="mb-8">
+            <div className="text-sm font-semibold text-accent">
+              EternalGhost
+            </div>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+              Sign in to Dashboard
+            </h1>
+            <p className="mt-2 text-sm text-text-secondary">
+              Paste the JWT token sent by the Discord bot.
+            </p>
+          </div>
+          {expired && (
+            <div className="mb-4 border-l-2 border-status-pending bg-amber-950/30 px-3 py-2 text-sm text-status-pending">
+              Your session has expired or was revoked. Please sign in again.
+            </div>
+          )}
+          {error && (
+            <div className="mb-4 border-l-2 border-status-error bg-red-950/30 px-3 py-2 text-sm text-status-error">
+              {error}
+            </div>
+          )}
+          <form onSubmit={submit} className="space-y-4">
+            <label className="block">
+              <span className="label">Dashboard token</span>
+              <textarea
+                id="dashboard-token"
+                name="token"
+                className="field min-h-28 resize-y font-mono text-xs"
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                placeholder="Paste token here"
+                autoComplete="off"
+              />
+            </label>
+            <button
+              className="btn-primary w-full"
+              disabled={loading || !token.trim()}
+            >
+              <LogIn size={16} />
+              {loading ? 'Signing in…' : 'Sign in'}
+            </button>
+          </form>
+          <p className="mt-6 text-xs text-text-secondary">
+            Tokens are stored in an httpOnly session cookie and are never saved
+            in browser storage.
           </p>
-        </div>
-        {expired && (
-          <div className="mb-4 border-l-2 border-status-pending bg-amber-950/30 px-3 py-2 text-sm text-status-pending">
-            Your session has expired or was revoked. Please sign in again.
-          </div>
-        )}
-        {error && (
-          <div className="mb-4 border-l-2 border-status-error bg-red-950/30 px-3 py-2 text-sm text-status-error">
-            {error}
-          </div>
-        )}
-        <form onSubmit={submit} className="space-y-4">
-          <label className="block">
-            <span className="label">Dashboard token</span>
-            <textarea
-              id="dashboard-token"
-              name="token"
-              className="field min-h-28 resize-y font-mono text-xs"
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-              placeholder="Paste token here"
-              autoComplete="off"
-            />
-          </label>
-          <button
-            className="btn-primary w-full"
-            disabled={loading || !token.trim()}
-          >
-            <LogIn size={16} />
-            {loading ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-        <p className="mt-6 text-xs text-text-secondary">
-          Tokens are stored in an httpOnly session cookie and are never saved in
-          browser storage.
-        </p>
-      </section>
+        </section>
+      </div>
+      <Footer />
     </main>
   );
 }

@@ -15,6 +15,7 @@ import { useSse } from './hooks/useSse';
 import { useDashboardStore } from './state/dashboardStore';
 import { Sidebar } from './components/Sidebar';
 import { Toasts } from './components/Toast';
+import { Footer } from './components/Footer';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { BotDetailPage } from './pages/BotDetailPage';
@@ -94,7 +95,7 @@ function AppShell() {
   return (
     <div className="flex min-h-screen bg-canvas">
       <Sidebar open={sidebarOpen} onToggle={setSidebarOpen} />
-      <div className="min-w-0 flex-1">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <header className="flex min-h-14 items-center justify-between border-b border-border bg-surface px-4">
           <div className="flex min-w-0 items-center gap-3">
             <button
@@ -115,9 +116,10 @@ function AppShell() {
             <span className="hidden sm:inline">Sign out</span>
           </button>
         </header>
-        <main className="mx-auto w-full max-w-[1600px] p-4 sm:p-6">
+        <main className="mx-auto w-full max-w-[1600px] flex-1 p-4 sm:p-6">
           <Outlet />
         </main>
+        <Footer />
       </div>
     </div>
   );
