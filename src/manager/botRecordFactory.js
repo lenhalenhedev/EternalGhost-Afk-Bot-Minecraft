@@ -6,6 +6,22 @@ const { validateBotConfig, validatePort } = require('../utils/validators');
 const { assertNoPollutingKeys } = require('../utils/security');
 const config = require('../config');
 
+const LABEL_MAX_LENGTH = 80;
+
+function validateLabel(label) {
+  if (typeof label !== 'string' || label.trim() === '') {
+    throw new Error('Label is required');
+  }
+  if (label.length > LABEL_MAX_LENGTH) {
+    throw new Error(`Label must be at most ${LABEL_MAX_LENGTH} characters`);
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(label)) {
+    throw new Error('Label contains invalid control characters');
+  }
+  return label.trim();
+}
+
 /**
  * Builds and validates persisted bot records. Centralising this here keeps the
  * BotManager focused on orchestration and guarantees create and edit share the
@@ -61,6 +77,7 @@ function buildNewRecord(opts, createdBy, createdInGuild = null) {
     host,
     port,
     username,
+    label = username,
     password = '',
     version,
     autoReconnect = true,
@@ -78,6 +95,7 @@ function buildNewRecord(opts, createdBy, createdInGuild = null) {
     password,
   });
   if (!validation.valid) throw new Error(validation.errors.join(', '));
+  const safeLabel = validateLabel(label);
 
   const now = new Date().toISOString();
   return {
@@ -85,6 +103,7 @@ function buildNewRecord(opts, createdBy, createdInGuild = null) {
     host,
     port: validatePort(port).value,
     username,
+    label: safeLabel,
     encryptedPassword: encryptCredential(password),
     version,
     autoReconnect,
@@ -111,18 +130,23 @@ function buildEditPatch(record, patch) {
   const merged = {
     host: patch.host !== undefined ? patch.host : record.host,
     port: patch.port !== undefined ? patch.port : record.port,
-    username: record.username,
+    username: patch.username !== undefined ? patch.username : record.username,
+    label:
+      patch.label !== undefined ? patch.label : record.label || record.username,
     version: patch.version !== undefined ? patch.version : record.version,
   };
   if (passwordProvided) merged.password = patch.password;
 
   const validation = validateBotConfig(merged);
   if (!validation.valid) throw new Error(validation.errors.join(', '));
+  const safeLabel = validateLabel(merged.label);
 
   const allowed = { updatedAt: new Date().toISOString() };
 
   if (patch.host !== undefined) allowed.host = patch.host;
   if (patch.port !== undefined) allowed.port = validatePort(patch.port).value;
+  if (patch.username !== undefined) allowed.username = merged.username;
+  if (patch.label !== undefined) allowed.label = safeLabel;
   if (patch.version !== undefined) allowed.version = patch.version;
 
   if (patch.autoReconnect !== undefined) {
@@ -132,7 +156,7 @@ function buildEditPatch(record, patch) {
     allowed.autoReconnect = patch.autoReconnect;
   }
 
-  if (passwordProvided && merged.password !== '') {
+  if (passwordProvided) {
     allowed.encryptedPassword = encryptCredential(merged.password);
   }
 

@@ -60,6 +60,7 @@ function recordFromRow(row, antiAfkRow, autoEatRow, combatRow) {
     host: row.host,
     port: row.port,
     username: row.username,
+    label: row.label || '',
     encryptedPassword: row.encrypted_password || '',
     version: row.version,
     autoReconnect: row.auto_reconnect,

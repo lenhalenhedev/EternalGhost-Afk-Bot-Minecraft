@@ -14,6 +14,7 @@ const { toSnapshot } = require('./botSnapshot');
 const { transitionToPlaying, transitionToAFK } = require('./phaseController');
 const { logger, botLog } = require('../services/logger');
 const { sleep } = require('../utils/helpers');
+const { parseChatInput } = require('../utils/chatInput');
 const config = require('../config');
 
 const CHAT_THROTTLE_MS = 200;
@@ -103,14 +104,22 @@ class BotInstance extends EventEmitter {
     this.emit('stopped');
   }
 
-  async chat(message) {
+  async sendInput(message) {
     if (!this._bot) throw new Error('Bot is not connected');
     if (!ALIVE_STATES.has(this._state))
       throw new Error(`Bot is in state ${this._state}`);
+
+    const parsed = parseChatInput(message);
     return this._queue.enqueue(async () => {
-      this._bot.chat(message);
+      // Mineflayer documents bot.chat(), not bot.command(). Keep the slash in
+      // the original message so the Minecraft server receives the command.
+      this._bot.chat(parsed.text);
       await sleep(CHAT_THROTTLE_MS);
     }, this.abortSignal);
+  }
+
+  async chat(message) {
+    return this.sendInput(message);
   }
 
   async _connect() {

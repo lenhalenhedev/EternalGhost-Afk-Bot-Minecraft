@@ -41,6 +41,13 @@ module.exports = {
     )
     .addStringOption((o) =>
       o
+        .setName('label')
+        .setDescription('Display label for this bot')
+        .setMaxLength(80)
+        .setRequired(false)
+    )
+    .addStringOption((o) =>
+      o
         .setName('password')
         .setDescription('Mật khẩu AuthMe (để trống nếu offline)')
         .setRequired(false)
@@ -58,6 +65,7 @@ module.exports = {
     const host = interaction.options.getString('host');
     const port = interaction.options.getInteger('port');
     const username = interaction.options.getString('username');
+    const label = interaction.options.getString('label') || username;
     const version = interaction.options.getString('version');
     const password = interaction.options.getString('password') || '';
     const autoReconnect =
@@ -65,13 +73,14 @@ module.exports = {
 
     try {
       const { id } = await BotManager.createBot(
-        { host, port, username, password, version, autoReconnect },
+        { host, port, username, label, password, version, autoReconnect },
         principal
       );
 
       const embed = successEmbed(
         'Bot Created',
         [
+          `**Label:** \`${label}\``,
           `**Username:** \`${username}\``,
           `**Server:** \`${host}:${port}\``,
           `**Version:** \`${version}\``,

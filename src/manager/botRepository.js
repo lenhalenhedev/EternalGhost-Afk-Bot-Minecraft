@@ -15,18 +15,19 @@
 function upsertBotRow(client, normalised) {
   return client.query(
     `INSERT INTO bots
-       (id, host, port, username, encrypted_password, version,
+       (id, host, port, username, label, encrypted_password, version,
         auto_reconnect, was_running, hidden, created_by, created_in_guild,
         created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      ON CONFLICT (id) DO UPDATE SET
-       host=$2, port=$3, username=$4, encrypted_password=$5, version=$6,
-       auto_reconnect=$7, was_running=$8, hidden=$9, updated_at=$13`,
+       host=$2, port=$3, username=$4, label=$5, encrypted_password=$6, version=$7,
+       auto_reconnect=$8, was_running=$9, hidden=$10, updated_at=$14`,
     [
       normalised.id,
       normalised.host,
       normalised.port,
       normalised.username,
+      normalised.label,
       normalised.encryptedPassword,
       normalised.version,
       normalised.autoReconnect,

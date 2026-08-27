@@ -15,9 +15,6 @@ const { safeErrorMessage } = require('../safeError');
 const cooldowns = new Map();
 const COOLDOWN_MS = 2500;
 
-// Whitelisted slash-commands the bot may send
-const ALLOWED_COMMANDS = ['/register', '/login', '/spawn', '/home', '/back'];
-
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('chat')
@@ -57,7 +54,7 @@ module.exports = {
     const message = interaction.options.getString('message');
 
     // Validate message
-    const validation = validateChatMessage(message, ALLOWED_COMMANDS);
+    const validation = validateChatMessage(message);
     if (!validation.valid) {
       return interaction.editReply({ embeds: [errorEmbed(validation.reason)] });
     }

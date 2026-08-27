@@ -1,0 +1,3 @@
+# Browser Verification Notes
+
+A local Vite preview at `http://127.0.0.1:4173/login` rendered successfully in Chromium. The page uses the dark charcoal canvas and dark surface panel from the new semantic palette. The browser-visible token control is a `<textarea id="dashboard-token">`; source also supplies `name="token"`. The page content and sign-in control rendered without a frontend runtime error in the captured viewport. The initial navigation screenshot briefly appeared blank while assets settled; a subsequent browser view showed the complete dark page, so this was a capture timing artifact rather than a CSS failure.

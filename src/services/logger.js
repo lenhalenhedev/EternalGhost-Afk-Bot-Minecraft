@@ -1,6 +1,7 @@
 'use strict';
 const path = require('path');
 const fs = require('fs');
+const { EventEmitter } = require('node:events');
 const winston = require('winston');
 require('winston-daily-rotate-file');
 const config = require('../config');
@@ -61,6 +62,8 @@ const logger = winston.createLogger({
 const { sanitizeForLog } = require('../utils/security');
 const { LogBuffers } = require('./logBuffer');
 const buffers = new LogBuffers();
+const logEvents = new EventEmitter();
+logEvents.setMaxListeners(0);
 
 function getBotLogs(botId, maxLines = 50, maxAgeMs = 0) {
   return buffers.getBotLogs(botId, maxLines, maxAgeMs);
@@ -90,6 +93,13 @@ function clearBotState(botId) {
   buffers.clearBot(botId);
 }
 
+function subscribeBotLogs(listener) {
+  if (typeof listener !== 'function')
+    throw new TypeError('Listener is required.');
+  logEvents.on('botLog', listener);
+  return () => logEvents.off('botLog', listener);
+}
+
 /**
  * FIX: Shutdown the logger and its internal buffers cleanly.
  * This stops the periodic prune timer in LogBuffers and closes winston transports.
@@ -104,6 +114,12 @@ function botLog(botId, level, message) {
   const safe = sanitizeForLog(message);
   logger.log({ level, message: safe, botId });
   buffers.pushBotLog(botId, level, safe);
+  logEvents.emit('botLog', {
+    botId,
+    ts: Date.now(),
+    level,
+    message: safe,
+  });
   if (level === 'warn' || level === 'error') {
     buffers.addToSummary(level, botId, safe);
   }
@@ -117,5 +133,6 @@ module.exports = {
   addToSummary,
   checkAlertCooldown,
   clearBotState,
+  subscribeBotLogs,
   shutdown,
 };

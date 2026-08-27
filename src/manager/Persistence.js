@@ -285,6 +285,8 @@ class Persistence {
     const columnMap = {
       host: 'host',
       port: 'port',
+      username: 'username',
+      label: 'label',
       version: 'version',
       encryptedPassword: 'encrypted_password',
       autoReconnect: 'auto_reconnect',
@@ -321,6 +323,7 @@ class Persistence {
       host: record.host,
       port: record.port,
       username: record.username,
+      label: record.label || '',
       encryptedPassword: record.encryptedPassword || '',
       version: record.version,
       autoReconnect:

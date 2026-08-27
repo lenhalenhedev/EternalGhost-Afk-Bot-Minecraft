@@ -148,3 +148,16 @@ test('BotManager does not expose legacy global resource getters that bypass prin
   assert.equal(typeof manager.getAllBots, 'undefined');
   assert.equal(typeof manager._getBotOrThrow, 'undefined');
 });
+
+test('Web principal can access an owned bot created in a Discord guild', () => {
+  const manager = prepareManager();
+  manager._bots.get(BOT_ID).record.createdInGuild = 'guild-1';
+
+  const instance = manager.resolveAuthorizedBot(
+    { userId: OWNER.userId, guildId: null, roles: [] },
+    BOT_ID,
+    { allowSelection: false }
+  );
+
+  assert.equal(instance.id, BOT_ID);
+});

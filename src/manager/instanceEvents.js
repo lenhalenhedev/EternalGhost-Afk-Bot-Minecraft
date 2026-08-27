@@ -3,6 +3,7 @@
 const Persistence = require('./Persistence');
 const { BOT_STATES } = require('../bot/states');
 const { checkAlertCooldown } = require('../services/logger');
+const { publish } = require('../web/sse/eventHub');
 
 /** True when a state means the bot should be considered "running" for persistence. */
 function isRunningState(state) {
@@ -17,6 +18,21 @@ function attachInstanceEvents(instance, notifier) {
   instance.on('stateChange', (_old, newState) => {
     Persistence.updateBotState(instance.id, {
       wasRunning: isRunningState(newState),
+    });
+    publish('bot:state', {
+      botId: instance.id,
+      ownerId: instance.record.createdBy,
+      state: newState,
+      snapshot: instance.toJSON(),
+    });
+  });
+
+  instance.on('healthUpdate', (metrics) => {
+    publish('bot:health', {
+      botId: instance.id,
+      ownerId: instance.record.createdBy,
+      ...metrics,
+      snapshot: instance.toJSON(),
     });
   });
 

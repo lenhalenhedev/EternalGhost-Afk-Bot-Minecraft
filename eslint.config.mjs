@@ -6,7 +6,14 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 
 export default defineConfig([
   {
-    ignores: ['package-lock.json', 'logs/**', 'data/**'],
+    ignores: [
+      'package-lock.json',
+      'web/package-lock.json',
+      'web/node_modules/**',
+      'web/dist/**',
+      'logs/**',
+      'data/**',
+    ],
   },
   {
     files: ['**/*.{js,mjs,cjs}'],
@@ -15,6 +22,18 @@ export default defineConfig([
     languageOptions: {
       globals: {
         ...globals.node,
+      },
+    },
+  },
+
+  {
+    files: ['web/src/**/*.{js,jsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+      },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
       },
     },
   },

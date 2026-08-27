@@ -21,6 +21,21 @@ module.exports = {
     .addStringOption((o) =>
       o.setName('host').setDescription('Server IP mới').setRequired(false)
     )
+    .addStringOption((o) =>
+      o
+        .setName('label')
+        .setDescription('Display label mới')
+        .setMaxLength(80)
+        .setRequired(false)
+    )
+    .addStringOption((o) =>
+      o
+        .setName('username')
+        .setDescription('Tên nhân vật mới')
+        .setMinLength(3)
+        .setMaxLength(16)
+        .setRequired(false)
+    )
     .addIntegerOption((o) =>
       o
         .setName('port')
@@ -75,12 +90,16 @@ module.exports = {
 
     const patch = {};
     const host = interaction.options.getString('host');
+    const label = interaction.options.getString('label');
+    const username = interaction.options.getString('username');
     const port = interaction.options.getInteger('port');
     const version = interaction.options.getString('version');
     const password = interaction.options.getString('password');
     const autoReconnect = interaction.options.getBoolean('auto-reconnect');
 
     if (host !== null) patch.host = host;
+    if (label !== null) patch.label = label;
+    if (username !== null) patch.username = username;
     if (port !== null) patch.port = port;
     if (version !== null) patch.version = version;
     if (password !== null) patch.password = password;

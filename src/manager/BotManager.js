@@ -7,6 +7,7 @@ const { buildNewRecord, buildEditPatch } = require('./botRecordFactory');
 const { attachInstanceEvents } = require('./instanceEvents');
 const { computeStats } = require('./managerStats');
 const { logger, flushSummary, clearBotState } = require('../services/logger');
+const { publish } = require('../web/sse/eventHub');
 const config = require('../config');
 
 const RESTART_PAUSE_MS = 1_500;
@@ -14,6 +15,7 @@ const SUMMARY_INTERVAL_MIN = 15;
 const SUMMARY_INTERVAL_BOUNDS = { min: 10, max: 30 };
 const CANONICAL_UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_PREFIX = /^[0-9a-f]+(?:-[0-9a-f]+)*$/i;
 
 class BotAccessError extends Error {
   constructor(code, message) {
@@ -43,6 +45,13 @@ function inaccessibleBotError() {
   return new BotAccessError(
     'RESOURCE_ACCESS_DENIED',
     'Bot not found or access denied.'
+  );
+}
+
+function ambiguousBotError() {
+  return new BotAccessError(
+    'AMBIGUOUS_BOT_ID',
+    'Multiple owned bots match this ID prefix. Enter more characters.'
   );
 }
 
@@ -146,7 +155,12 @@ class BotManager {
       port: record.port,
       version: record.version,
     });
-    this._register(record);
+    const instance = this._register(record);
+    publish('bot:created', {
+      botId: instance.id,
+      ownerId: record.createdBy,
+      snapshot: instance.toJSON(),
+    });
     logger.info(
       `[BotManager] Bot created: ${record.id} (${record.username}@${record.host}:${record.port})`
     );
@@ -162,11 +176,21 @@ class BotManager {
 
   async deleteBot(principal, id) {
     const instance = this.resolveAuthorizedBot(principal, id);
+    if (instance.state !== 'OFFLINE') {
+      throw new BotAccessError(
+        'BOT_MUST_BE_STOPPED',
+        'Bot must be stopped before it can be deleted.'
+      );
+    }
     await Persistence.deleteBotWithActivity(
       instance.id,
       'deleted',
       principal.userId
     );
+    publish('bot:deleted', {
+      botId: instance.id,
+      ownerId: instance.record.createdBy,
+    });
     await instance.destroy();
     this._bots.delete(instance.id);
     // Clear all per-bot in-memory state after the record is no longer active.
@@ -218,6 +242,16 @@ class BotManager {
   async editBot(principal, id, patch) {
     const instance = this.resolveAuthorizedBot(principal, id);
     const allowed = buildEditPatch(instance.record, patch);
+    const duplicate = Persistence.findBot(
+      allowed.host ?? instance.record.host,
+      allowed.port ?? instance.record.port,
+      allowed.username ?? instance.record.username
+    );
+    if (duplicate && duplicate.id !== instance.id) {
+      throw new Error(
+        `A bot for ${allowed.username ?? instance.record.username}@${allowed.host ?? instance.record.host}:${allowed.port ?? instance.record.port} already exists.`
+      );
+    }
     const updatedRecord = { ...instance.record, ...allowed };
     await Persistence.saveBotWithActivity(
       updatedRecord,
@@ -228,6 +262,11 @@ class BotManager {
       }
     );
     Object.assign(instance.record, allowed);
+    publish('bot:updated', {
+      botId: instance.id,
+      ownerId: instance.record.createdBy,
+      snapshot: instance.toJSON(),
+    });
     logger.info(
       `[BotManager] Bot edited: ${instance.id} by ${principal.userId}`
     );
@@ -238,7 +277,7 @@ class BotManager {
   }
 
   async chatBot(principal, id, message) {
-    await this.resolveAuthorizedBot(principal, id).chat(message);
+    await this.resolveAuthorizedBot(principal, id).sendInput(message);
   }
 
   // ─── Queries ───
@@ -284,7 +323,10 @@ class BotManager {
   _principalOwnsRecord(principal, record) {
     if (!record || record.createdBy !== principal.userId) return false;
     return (
-      !record.createdInGuild || record.createdInGuild === principal.guildId
+      !record.createdInGuild ||
+      principal.guildId === null ||
+      principal.guildId === undefined ||
+      record.createdInGuild === principal.guildId
     );
   }
 
@@ -323,6 +365,10 @@ class BotManager {
     );
   }
 
+  listAllInstances() {
+    return [...this._bots.values()];
+  }
+
   getUserSelection(principal) {
     try {
       return this.resolveAuthorizedBot(principal, null, {
@@ -334,8 +380,28 @@ class BotManager {
     }
   }
 
+  resolveAuthorizedBotPrefix(principal, requestedId) {
+    assertPrincipal(principal);
+    const prefix = String(requestedId ?? '')
+      .trim()
+      .toLowerCase();
+    if (prefix.length < 8 || prefix.length > 36 || !UUID_PREFIX.test(prefix)) {
+      throw new BotAccessError(
+        'INVALID_BOT_ID',
+        'Enter at least 8 hexadecimal characters from the bot ID.'
+      );
+    }
+
+    const matches = this.listAuthorizedBots(principal).filter((bot) =>
+      bot.id.toLowerCase().startsWith(prefix)
+    );
+    if (matches.length > 1) throw ambiguousBotError();
+    if (matches.length === 0) throw inaccessibleBotError();
+    return matches[0];
+  }
+
   async setUserSelection(principal, botId) {
-    const instance = this.resolveAuthorizedBot(principal, botId);
+    const instance = this.resolveAuthorizedBotPrefix(principal, botId);
     await Persistence.setUserSelection(principal.userId, instance.id);
     return instance;
   }

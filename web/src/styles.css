@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #F4F7FB;
+  background: #0F1115;
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: #0F1115; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+
+@layer components {
+  .panel { @apply rounded-panel border border-border bg-surface shadow-panel; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-panel border px-3 py-2 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply btn border-accent bg-accent text-slate-950 hover:bg-blue-400; }
+  .btn-secondary { @apply btn border-border bg-surface text-text-primary hover:bg-canvas; }
+  .btn-danger { @apply btn border-red-400/40 bg-red-950/30 text-status-error hover:bg-red-950/60; }
+  .field { @apply w-full rounded-panel border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/30; }
+  .label { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-text-secondary; }
+}

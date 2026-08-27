@@ -16,7 +16,12 @@ const selectBot = {
     .setDescription('Chọn bot để điều khiển (dùng cho /start /stop /chat ...)')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((o) =>
-      o.setName('id').setDescription('Full bot ID').setRequired(true)
+      o
+        .setName('id')
+        .setDescription('Unique UUID prefix, at least 8 characters')
+        .setMinLength(8)
+        .setMaxLength(36)
+        .setRequired(true)
     ),
 
   async execute(interaction, principal) {

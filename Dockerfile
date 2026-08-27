@@ -1,6 +1,14 @@
-# syntax=docker/dockerfile:1
+# ---- web: build the Vite frontend ----
+FROM node:24-slim AS web-build
 
-# ---- deps: install production dependencies only ----
+WORKDIR /app/web
+
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# ---- deps: install production backend dependencies only ----
 FROM node:24-slim AS deps
 
 WORKDIR /app
@@ -12,10 +20,13 @@ RUN npm ci --omit=dev
 FROM node:24-slim AS runtime
 
 ENV NODE_ENV=production
+ENV WEB_PORT=8080
+ENV WEB_HTTPS=false
 
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=web-build /app/web/dist ./web/dist
 COPY . .
 
 RUN mkdir -p /app/logs && chown -R node:node /app
@@ -23,5 +34,6 @@ RUN mkdir -p /app/logs && chown -R node:node /app
 USER node
 
 VOLUME ["/app/logs"]
+EXPOSE 8080
 
 CMD ["npm", "run", "start"]

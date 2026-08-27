@@ -20,6 +20,14 @@ function intEnv(key, fallback, bounds = {}) {
   return parsed.valid ? parsed.value : fallback;
 }
 
+function boolEnv(key, fallback = false) {
+  const raw = process.env[key];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  if (raw.trim().toLowerCase() === 'true') return true;
+  if (raw.trim().toLowerCase() === 'false') return false;
+  throw new Error(`${key} must be true or false`);
+}
+
 function ipListEnv(key) {
   const values = optionalEnv(key)
     .split(',')
@@ -74,6 +82,10 @@ try {
     encryption: {
       key: encryptionKey,
       oldKey: oldKey || null,
+    },
+    web: {
+      port: intEnv('WEB_PORT', 8080, { min: 1, max: 65535 }),
+      https: boolEnv('WEB_HTTPS', false),
     },
     storage: {
       logDir: optionalEnv('LOG_DIR', './logs'),

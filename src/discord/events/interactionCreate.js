@@ -9,6 +9,15 @@ module.exports = {
   name: 'interactionCreate',
 
   async execute(interaction) {
+    if (interaction.isAutocomplete()) {
+      const autocompleteCommand = interaction.client.commands.get(
+        interaction.commandName
+      );
+      if (!autocompleteCommand?.autocomplete) return;
+      if (!isAdmin(interaction.user.id, config.access.adminIds)) return;
+      await autocompleteCommand.autocomplete(interaction);
+      return;
+    }
     if (!interaction.isChatInputCommand()) return;
 
     // ── Admin guard ───────────────────────────────────────────────────────

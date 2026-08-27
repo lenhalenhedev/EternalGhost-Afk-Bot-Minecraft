@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS bots (
     host               TEXT         NOT NULL,
     port               INTEGER      NOT NULL CHECK (port BETWEEN 1 AND 65535),
     username           TEXT         NOT NULL,
+    label              TEXT         NOT NULL DEFAULT '',
     -- AES-256-GCM payload produced by src/services/encryption.js. Empty string
     -- means "no password" (offline / no-auth servers). Never store plaintext.
     encrypted_password TEXT         NOT NULL DEFAULT '',
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS bots (
 
 -- Upgrade existing databases created before creation-guild provenance.
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_in_guild TEXT;
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT '';
 
 -- ─── Anti-AFK configuration (1:1 with bots) ─────────────────────────────────
 CREATE TABLE IF NOT EXISTS bot_antiafk_config (
@@ -81,6 +83,16 @@ CREATE TABLE IF NOT EXISTS bot_combat_config (
     attack_interval     INTEGER NOT NULL DEFAULT 600,
     invisible_timeout   INTEGER NOT NULL DEFAULT 3000
 );
+
+-- ─── Active Web sessions (one token per Discord user) ───────────────────────
+CREATE TABLE IF NOT EXISTS web_tokens (
+    user_id       TEXT        PRIMARY KEY,
+    token_hash    TEXT        NOT NULL UNIQUE,
+    issued_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at    TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS web_tokens_expires_at_idx ON web_tokens (expires_at);
 
 -- ─── User → selected bot (replaces userSelections map) ──────────────────────
 CREATE TABLE IF NOT EXISTS user_selections (

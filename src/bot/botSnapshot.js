@@ -11,12 +11,16 @@ function toSnapshot(instance) {
     host: r.host,
     port: r.port,
     username: r.username,
+    label: r.label || r.username,
     version: r.version,
     state: instance.state,
     uptime: instance.uptime,
     health: instance.health,
     food: instance.food,
     ping: instance.ping,
+    playerCount: instance.bot?.players
+      ? Object.keys(instance.bot.players).length
+      : null,
     position: instance.position,
     reconnectAttempts: instance.reconnectAttempts,
     autoReconnect: r.autoReconnect,
