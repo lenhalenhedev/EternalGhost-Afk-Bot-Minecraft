@@ -9,11 +9,8 @@ const { validateChatMessage } = require('../../utils/validators');
 const { successEmbed, errorEmbed } = require('../embeds');
 const { ALIVE_STATES } = require('../../bot/states');
 const { logger } = require('../../services/logger');
+const config = require('../../config');
 const { safeErrorMessage } = require('../safeError');
-
-// Per-user cooldown: userId -> lastSentTs
-const cooldowns = new Map();
-const COOLDOWN_MS = 2500;
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -37,24 +34,13 @@ module.exports = {
   async execute(interaction, principal) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    // Cooldown check
-    const now = Date.now();
-    const lastSent = cooldowns.get(interaction.user.id) || 0;
-    if (now - lastSent < COOLDOWN_MS) {
-      const remaining = ((COOLDOWN_MS - (now - lastSent)) / 1000).toFixed(1);
-      return interaction.editReply({
-        embeds: [
-          errorEmbed(
-            `Cooldown: chờ thêm **${remaining}s** trước khi gửi tiếp.`
-          ),
-        ],
-      });
-    }
-
     const message = interaction.options.getString('message');
 
     // Validate message
-    const validation = validateChatMessage(message);
+    const validation = validateChatMessage(
+      message,
+      config.web.allowedCommandPrefixes
+    );
     if (!validation.valid) {
       return interaction.editReply({ embeds: [errorEmbed(validation.reason)] });
     }
@@ -87,7 +73,6 @@ module.exports = {
 
     try {
       await BotManager.chatBot(principal, instance.id, message);
-      cooldowns.set(interaction.user.id, Date.now());
       await interaction.editReply({
         embeds: [
           successEmbed(
@@ -97,7 +82,17 @@ module.exports = {
         ],
       });
     } catch (err) {
-      logger.error(`[chat] ${err?.stack || err?.message || err}`);
+      if (err?.code === 'RATE_LIMITED') {
+        const remaining = (err.retryAfterMs / 1_000).toFixed(1);
+        return interaction.editReply({
+          embeds: [
+            errorEmbed(
+              `Cooldown: chờ thêm **${remaining}s** trước khi gửi tiếp.`
+            ),
+          ],
+        });
+      }
+      logger.error({ err }, '[chat] Could not send message.');
       await interaction.editReply({
         embeds: [errorEmbed(safeErrorMessage(err, 'Could not send message.'))],
       });

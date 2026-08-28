@@ -3,12 +3,13 @@ import { Clipboard, KeyRound, RefreshCw, Shield, Trash2 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useToastStore } from '../state/toastStore';
 
-const MAX_TTL = 9007199254740991;
+const MAX_TTL_DAYS = 365;
 
 export function TokenManagementPage() {
   const [tokens, setTokens] = useState([]);
   const [userId, setUserId] = useState('');
-  const [ttlMs, setTtlMs] = useState('86400000');
+  const [days, setDays] = useState('30');
+  const [renewDays, setRenewDays] = useState({});
   const [newToken, setNewToken] = useState('');
   const [loading, setLoading] = useState(false);
   const push = useToastStore((state) => state.push);
@@ -25,22 +26,17 @@ export function TokenManagementPage() {
 
   const create = async (event) => {
     event.preventDefault();
-    const value = Number(ttlMs);
-    if (
-      !Number.isSafeInteger(value) ||
-      value < 1000 ||
-      value > MAX_TTL ||
-      value % 1000 !== 0
-    )
+    const value = Number(days);
+    if (!Number.isSafeInteger(value) || value < 1 || value > MAX_TTL_DAYS)
       return push(
-        'Expiry must be a whole number of milliseconds divisible by 1000, from 1000 to 9007199254740991.',
+        `Expiry must be a whole number of days from 1 to ${MAX_TTL_DAYS}.`,
         'error'
       );
     setLoading(true);
     try {
       const { data } = await api.post('/admin/tokens', {
         userId: userId.trim(),
-        ttlMs: value,
+        days: value,
       });
       setNewToken(data.token);
       setUserId('');
@@ -52,6 +48,28 @@ export function TokenManagementPage() {
       setLoading(false);
     }
   };
+
+  const renew = async (target) => {
+    const time = Number(renewDays[target] || 30);
+    if (!Number.isSafeInteger(time) || time < 1 || time > MAX_TTL_DAYS)
+      return push(
+        `Renewal time must be a whole number of days from 1 to ${MAX_TTL_DAYS}.`,
+        'error'
+      );
+    try {
+      const { data } = await api.post(`/admin/tokens/${target}/renew`, {
+        time,
+      });
+      setNewToken(data.token);
+      await load();
+      push(
+        'Token renewed. Copy the new token now; it will not be shown again.'
+      );
+    } catch (error) {
+      push(errorMessage(error, 'Could not renew token.'), 'error');
+    }
+  };
+
   const revoke = async (target) => {
     if (
       !window.confirm(
@@ -98,17 +116,17 @@ export function TokenManagementPage() {
             />
           </label>
           <label>
-            <span className="label">Expiry (milliseconds)</span>
+            <span className="label">Expiry (days)</span>
             <input
-              id="token-ttl-ms"
-              name="ttlMs"
+              id="token-ttl-days"
+              name="days"
               className="field font-mono"
               type="number"
-              min="1000"
-              max={MAX_TTL}
-              step="1000"
-              value={ttlMs}
-              onChange={(event) => setTtlMs(event.target.value)}
+              min="1"
+              max={MAX_TTL_DAYS}
+              step="1"
+              value={days}
+              onChange={(event) => setDays(event.target.value)}
               required
             />
           </label>
@@ -155,7 +173,7 @@ export function TokenManagementPage() {
             <RefreshCw size={15} />
           </button>
         </div>
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-border text-xs uppercase tracking-wide text-text-secondary">
             <tr>
               <th className="px-4 py-3">Discord User ID</th>
@@ -163,6 +181,7 @@ export function TokenManagementPage() {
               <th className="px-4 py-3">Created</th>
               <th className="px-4 py-3">Expires</th>
               <th className="px-4 py-3">Bots</th>
+              <th className="px-4 py-3">Renew (days)</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -178,13 +197,38 @@ export function TokenManagementPage() {
                   {new Date(token.expiresAt).toLocaleString()}
                 </td>
                 <td className="px-4 py-3 font-mono">{token.botCount}</td>
+                <td className="px-4 py-3">
+                  <input
+                    className="field w-24"
+                    type="number"
+                    min="1"
+                    max={MAX_TTL_DAYS}
+                    step="1"
+                    value={renewDays[token.userId] || '30'}
+                    onChange={(event) =>
+                      setRenewDays((current) => ({
+                        ...current,
+                        [token.userId]: event.target.value,
+                      }))
+                    }
+                    aria-label={`Renewal days for ${token.userId}`}
+                  />
+                </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    className="btn-danger px-2 py-1.5"
-                    onClick={() => revoke(token.userId)}
-                  >
-                    <Trash2 size={15} /> Revoke
-                  </button>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      className="btn-secondary px-2 py-1.5"
+                      onClick={() => renew(token.userId)}
+                    >
+                      <RefreshCw size={15} /> Renew
+                    </button>
+                    <button
+                      className="btn-danger px-2 py-1.5"
+                      onClick={() => revoke(token.userId)}
+                    >
+                      <Trash2 size={15} /> Revoke
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

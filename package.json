@@ -28,9 +28,8 @@
     "mineflayer-pathfinder": "^2.4.5",
     "node-cron": "^4.6.0",
     "pg": "^8.22.0",
-    "uuid": "^11.1.1",
-    "winston": "^3.19.0",
-    "winston-daily-rotate-file": "^5.0.0"
+    "pino": "^9.14.0",
+    "uuid": "^11.1.1"
   },
   "engines": {
     "node": ">=24.0.0"

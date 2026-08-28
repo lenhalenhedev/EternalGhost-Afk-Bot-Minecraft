@@ -13,6 +13,7 @@ import {
 import { api } from './lib/api';
 import { useSse } from './hooks/useSse';
 import { useDashboardStore } from './state/dashboardStore';
+import { useToastStore } from './state/toastStore';
 import { Sidebar } from './components/Sidebar';
 import { Toasts } from './components/Toast';
 import { Footer } from './components/Footer';
@@ -25,6 +26,32 @@ export default function App() {
   const [checking, setChecking] = useState(true);
   const user = useDashboardStore((state) => state.user);
   const setUser = useDashboardStore((state) => state.setUser);
+  const openModal = useToastStore((state) => state.openModal);
+  useEffect(() => {
+    const onSessionExpired = () => {
+      openModal({
+        title: 'Session expired',
+        message: 'Your session has expired or was revoked.',
+        confirmLabel: 'OK',
+        onConfirm: () => window.location.assign('/login?expired=1'),
+      });
+    };
+    const onRateLimited = (event) => {
+      const { message, retryAfterMs, until } = event.detail || {};
+      openModal({
+        title: 'Request rate limited',
+        message: message || 'Too many requests',
+        retryAfterMs: retryAfterMs || 0,
+        until: until || Date.now(),
+      });
+    };
+    window.addEventListener('app:session-expired', onSessionExpired);
+    window.addEventListener('app:rate-limited', onRateLimited);
+    return () => {
+      window.removeEventListener('app:session-expired', onSessionExpired);
+      window.removeEventListener('app:rate-limited', onRateLimited);
+    };
+  }, [openModal]);
   useEffect(() => {
     api
       .get('/auth/me')

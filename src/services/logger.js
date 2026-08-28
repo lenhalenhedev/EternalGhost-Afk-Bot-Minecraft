@@ -1,66 +1,91 @@
 'use strict';
-const path = require('path');
-const fs = require('fs');
-const { EventEmitter } = require('node:events');
-const winston = require('winston');
-require('winston-daily-rotate-file');
-const config = require('../config');
 
-// Ensure log directory exists
+const path = require('node:path');
+const fs = require('node:fs');
+const { EventEmitter } = require('node:events');
+const pino = require('pino');
+const config = require('../config');
+const { sanitizeForLog } = require('../utils/security');
+const { LogBuffers } = require('./logBuffer');
+
 const LOG_DIR = path.resolve(config.storage.logDir);
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
-// ─── Formats ──────────────────────────────────────────────────────────────────
-const { combine, timestamp, colorize, printf, errors } = winston.format;
+// ANSI escape filtering intentionally uses control characters.
+const stripAnsi = (value) =>
+  String(value ?? '').replace(
+    // eslint-disable-next-line no-control-regex
+    /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g,
+    ''
+  );
 
-const fileFormat = combine(
-  errors({ stack: true }),
-  timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  printf(({ level, message, timestamp: ts, botId, stack }) => {
-    const prefix = botId ? `[${botId.slice(0, 8)}]` : '[SYSTEM]';
-    return `${ts} [${level.toUpperCase()}] ${prefix} ${stack || message}`;
-  })
+function safeText(value) {
+  return stripAnsi(sanitizeForLog(value));
+}
+
+function normalizeError(error) {
+  if (!error) return undefined;
+  if (error instanceof Error) {
+    return { name: safeText(error.name) };
+  }
+  if (typeof error === 'object') {
+    return { name: safeText(error.name || 'Error') };
+  }
+  return { name: 'Error' };
+}
+
+function normalizeFields(fields = {}) {
+  const normalized = {};
+  for (const key of ['requestId', 'userId', 'botId', 'route', 'statusCode']) {
+    if (fields[key] !== undefined && fields[key] !== null)
+      normalized[key] =
+        key === 'statusCode' ? Number(fields[key]) : safeText(fields[key]);
+  }
+  if (fields.err) normalized.err = normalizeError(fields.err);
+  return normalized;
+}
+
+const combinedStream = fs.createWriteStream(
+  path.join(LOG_DIR, 'combined.jsonl'),
+  { flags: 'a' }
 );
-
-const consoleFormat = combine(
-  colorize({ all: true }),
-  timestamp({ format: 'HH:mm:ss' }),
-  printf(({ level, message, timestamp: ts, botId, stack }) => {
-    const prefix = botId ? `[Bot:${botId.slice(0, 8)}]` : '[SYS]';
-    return `${ts} ${level} ${prefix} ${stack || message}`;
-  })
-);
-
-// ─── Transports ───────────────────────────────────────────────────────────────
-const transports = [
-  new winston.transports.Console({ format: consoleFormat }),
-  new winston.transports.DailyRotateFile({
-    filename: path.join(LOG_DIR, 'combined-%DATE%.log'),
-    datePattern: 'YYYY-MM-DD',
-    maxFiles: '14d',
-    maxSize: '50m',
-    format: fileFormat,
-    zippedArchive: true,
-  }),
-  new winston.transports.DailyRotateFile({
-    level: 'error',
-    filename: path.join(LOG_DIR, 'error-%DATE%.log'),
-    datePattern: 'YYYY-MM-DD',
-    maxFiles: '30d',
-    format: fileFormat,
-    zippedArchive: true,
-  }),
-];
-
-const logger = winston.createLogger({
-  level: config.storage.logLevel || 'info',
-  transports,
-  exitOnError: false,
+const errorStream = fs.createWriteStream(path.join(LOG_DIR, 'error.jsonl'), {
+  flags: 'a',
 });
+const destination = pino.multistream([
+  { stream: process.stdout },
+  { stream: combinedStream },
+  { level: 'error', stream: errorStream },
+]);
+const pinoLogger = pino(
+  {
+    level: config.storage.logLevel || 'info',
+    base: null,
+    timestamp: pino.stdTimeFunctions.isoTime,
+    formatters: { level: (label) => ({ level: label }) },
+  },
+  destination
+);
 
-// ─── In-memory buffers ────────────────────────────────────────────────────────
-const { sanitizeForLog } = require('../utils/security');
-const { LogBuffers } = require('./logBuffer');
+const logger = {
+  log({ level = 'info', message = '', ...fields } = {}) {
+    const method = typeof pinoLogger[level] === 'function' ? level : 'info';
+    pinoLogger[method](normalizeFields(fields), safeText(message));
+  },
+};
+for (const level of ['trace', 'debug', 'info', 'warn', 'error', 'fatal']) {
+  logger[level] = (fieldsOrMessage, maybeMessage) => {
+    if (typeof fieldsOrMessage === 'object' && fieldsOrMessage !== null) {
+      pinoLogger[level](
+        normalizeFields(fieldsOrMessage),
+        safeText(maybeMessage || fieldsOrMessage.msg || '')
+      );
+      return;
+    }
+    pinoLogger[level]({}, safeText(fieldsOrMessage));
+  };
+}
+
 const buffers = new LogBuffers();
 const logEvents = new EventEmitter();
 logEvents.setMaxListeners(0);
@@ -70,7 +95,7 @@ function getBotLogs(botId, maxLines = 50, maxAgeMs = 0) {
 }
 
 function addToSummary(level, botId, message) {
-  buffers.addToSummary(level, botId, sanitizeForLog(message));
+  buffers.addToSummary(level, botId, safeText(message));
 }
 
 function flushSummary() {
@@ -88,7 +113,6 @@ function checkAlertCooldown(key) {
   return buffers.checkAlertCooldown(key);
 }
 
-/** Drop all retained in-memory state for a deleted bot (prevents leaks). */
 function clearBotState(botId) {
   buffers.clearBot(botId);
 }
@@ -100,26 +124,18 @@ function subscribeBotLogs(listener) {
   return () => logEvents.off('botLog', listener);
 }
 
-/**
- * FIX: Shutdown the logger and its internal buffers cleanly.
- * This stops the periodic prune timer in LogBuffers and closes winston transports.
- */
 function shutdown() {
   buffers.destroy();
-  logger.close();
+  pinoLogger.flush();
+  combinedStream.end();
+  errorStream.end();
 }
 
-// ─── Convenience wrapper ──────────────────────────────────────────────────────
 function botLog(botId, level, message) {
-  const safe = sanitizeForLog(message);
+  const safe = safeText(message);
   logger.log({ level, message: safe, botId });
   buffers.pushBotLog(botId, level, safe);
-  logEvents.emit('botLog', {
-    botId,
-    ts: Date.now(),
-    level,
-    message: safe,
-  });
+  logEvents.emit('botLog', { botId, ts: Date.now(), level, message: safe });
   if (level === 'warn' || level === 'error') {
     buffers.addToSummary(level, botId, safe);
   }
@@ -135,4 +151,6 @@ module.exports = {
   clearBotState,
   subscribeBotLogs,
   shutdown,
+  normalizeFields,
+  stripAnsi,
 };

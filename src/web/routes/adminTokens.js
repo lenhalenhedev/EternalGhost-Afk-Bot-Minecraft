@@ -1,8 +1,9 @@
 const express = require('express');
 const { authenticate, requireAdmin } = require('../auth/authenticate');
 const {
-  issueToken,
+  issueTokenDays,
   listTokenMetadata,
+  renewToken,
   revokeToken,
 } = require('../auth/tokenService');
 
@@ -22,9 +23,9 @@ function createAdminTokenRouter() {
 
   router.post('/', async (req, res) => {
     const userId = req.body?.userId;
-    const ttlMs = req.body?.ttlMs;
+    const days = req.body?.days;
     try {
-      const result = await issueToken(userId, ttlMs);
+      const result = await issueTokenDays(userId, days);
       return res.status(201).json({
         token: result.token,
         tokenMetadata: result.metadata,
@@ -33,6 +34,18 @@ function createAdminTokenRouter() {
       return res
         .status(422)
         .json({ error: err?.message || 'Could not create token.' });
+    }
+  });
+
+  router.post('/:userId/renew', async (req, res) => {
+    const time = req.body?.time;
+    try {
+      const result = await renewToken(req.params.userId, time);
+      return res.json({ token: result.token, tokenMetadata: result.metadata });
+    } catch (err) {
+      return res
+        .status(422)
+        .json({ error: err?.message || 'Could not renew token.' });
     }
   });
 

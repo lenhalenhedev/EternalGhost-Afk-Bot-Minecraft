@@ -58,6 +58,35 @@ test('every dashboard form control has explicit id and name attributes', () => {
   assert.ok((controls.match(/register\('/g) || []).length >= 7);
 });
 
+test('SSE tab identity has a fallback when crypto.randomUUID is unavailable', () => {
+  const source = read('web/src/hooks/useSse.js');
+  assert.match(source, /createTabId/);
+  assert.match(source, /globalThis\.crypto\?\.randomUUID\?\./);
+  assert.match(source, /fallbackTabSequence/);
+  assert.doesNotMatch(source, /const tabId = crypto\.randomUUID\(\)/);
+});
+
+test('SSE uses one BroadcastChannel leader with heartbeat election and bounded jittered backoff', () => {
+  const source = read('web/src/hooks/useSse.js');
+  assert.match(source, /BroadcastChannel/);
+  assert.match(source, /HEARTBEAT_MS = 1_000/);
+  assert.match(source, /LEADER_TIMEOUT_MS = 4_000/);
+  assert.match(source, /MAX_BACKOFF_MS = 30_000/);
+  assert.match(source, /2 \*\* reconnectAttempt/);
+  assert.match(source, /Math\.random\(\)/);
+});
+
+test('frontend exposes acknowledgement session expiry and unified 429 popup handling', () => {
+  const app = read('web/src/App.jsx');
+  const api = read('web/src/lib/api.js');
+  const toast = read('web/src/components/Toast.jsx');
+  assert.match(app, /app:session-expired/);
+  assert.match(app, /Session expired/);
+  assert.match(api, /app:rate-limited/);
+  assert.match(api, /retry-after/);
+  assert.match(toast, /remainingSeconds/);
+});
+
 test('the frontend defines a dark root palette and log-specific dark colors', () => {
   const styles = read('web/src/styles.css');
   const tokens = read('web/tailwind.config.js');

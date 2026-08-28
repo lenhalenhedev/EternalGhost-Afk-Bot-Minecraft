@@ -1,6 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
+const crypto = require('node:crypto');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
@@ -41,6 +42,10 @@ function createWebApp(botManager = BotManager) {
       originAgentCluster: config.web.https,
     })
   );
+  app.use((req, _res, next) => {
+    req.requestId = crypto.randomUUID();
+    next();
+  });
   app.use(express.json({ limit: '32kb' }));
   app.use(cookieParser());
 
@@ -61,7 +66,10 @@ function createWebApp(botManager = BotManager) {
   app.use((_req, res) => res.status(404).json({ error: 'Not found.' }));
   app.use((err, _req, res, next) => {
     void next;
-    logger.error(`[Web] Unhandled request error: ${err?.stack || err}`);
+    logger.error(
+      { route: 'web:error-handler', statusCode: 500, err },
+      'Unhandled Web request error.'
+    );
     return res.status(500).json({ error: 'Internal server error.' });
   });
   return app;
