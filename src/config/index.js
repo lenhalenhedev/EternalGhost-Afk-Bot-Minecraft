@@ -86,6 +86,10 @@ try {
     web: {
       port: intEnv('WEB_PORT', 8080, { min: 1, max: 65535 }),
       https: boolEnv('WEB_HTTPS', false),
+      allowedCommandPrefixes: optionalEnv('ALLOWED_COMMAND_PREFIXES')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
     },
     storage: {
       logDir: optionalEnv('LOG_DIR', './logs'),
@@ -109,6 +113,10 @@ try {
     },
     limits: {
       maxBots: intEnv('MAX_BOTS', 50, { min: 1 }),
+      maxBotsPerUser: intEnv('MAX_BOTS_PER_USER', 5, { min: 1, max: 5 }),
+      botCreateLimit: intEnv('BOT_CREATE_LIMIT', 5, { min: 1, max: 5 }),
+      botCreateWindowMs: intEnv('BOT_CREATE_WINDOW_MS', 600_000, { min: 1 }),
+      chatCooldownMs: intEnv('CHAT_COOLDOWN_MS', 2_500, { min: 1 }),
       queueSize: intEnv('BOT_QUEUE_SIZE', 100, { min: 1 }),
       queueTimeout: intEnv('BOT_QUEUE_TIMEOUT', 10_000, { min: 1 }),
       logSummaryIntervalMin: intEnv('LOG_SUMMARY_INTERVAL_MIN', 15, { min: 1 }),

@@ -9,6 +9,10 @@ const { computeStats } = require('./managerStats');
 const { logger, flushSummary, clearBotState } = require('../services/logger');
 const { publish } = require('../web/sse/eventHub');
 const config = require('../config');
+const {
+  consumeChat,
+  consumeBotCreation,
+} = require('../services/accountRateLimits');
 
 const RESTART_PAUSE_MS = 1_500;
 const SUMMARY_INTERVAL_MIN = 15;
@@ -136,6 +140,23 @@ class BotManager {
   // ─── Bot lifecycle ───
   async createBot(opts, principal) {
     assertPrincipal(principal);
+    const creationLimit = consumeBotCreation(principal.userId);
+    if (!creationLimit.allowed) {
+      const error = new Error('Too many bot creation requests.');
+      error.code = 'RATE_LIMITED';
+      error.retryAfterMs = creationLimit.retryAfterMs;
+      throw error;
+    }
+    const ownedBotCount = [...this._bots.values()].filter(
+      (instance) => instance.record.createdBy === principal.userId
+    ).length;
+    if (ownedBotCount >= config.limits.maxBotsPerUser) {
+      const error = new Error(
+        `Maximum bot limit per user (${config.limits.maxBotsPerUser}) reached.`
+      );
+      error.code = 'BOT_USER_QUOTA_REACHED';
+      throw error;
+    }
     const record = buildNewRecord(
       opts,
       principal.userId,
@@ -277,6 +298,13 @@ class BotManager {
   }
 
   async chatBot(principal, id, message) {
+    const chatLimit = consumeChat(principal.userId);
+    if (!chatLimit.allowed) {
+      const error = new Error('Chat cooldown active.');
+      error.code = 'RATE_LIMITED';
+      error.retryAfterMs = chatLimit.retryAfterMs;
+      throw error;
+    }
     await this.resolveAuthorizedBot(principal, id).sendInput(message);
   }
 

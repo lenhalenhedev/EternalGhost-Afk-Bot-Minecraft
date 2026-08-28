@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { issueToken } = require('../../web/auth/tokenService');
+const { issueTokenDays } = require('../../web/auth/tokenService');
+const { MAX_TOKEN_TTL_DAYS } = require('../../web/auth/tokenValidation');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -14,17 +15,17 @@ module.exports = {
     .addIntegerOption((option) =>
       option
         .setName('expired')
-        .setDescription('Token lifetime in milliseconds')
-        .setMinValue(1_000)
-        .setMaxValue(Number.MAX_SAFE_INTEGER)
+        .setDescription('Token lifetime in days')
+        .setMinValue(1)
+        .setMaxValue(MAX_TOKEN_TTL_DAYS)
         .setRequired(true)
     ),
 
   async execute(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const user = interaction.options.getUser('user');
-    const ttlMs = interaction.options.getInteger('expired');
-    const result = await issueToken(user.id, ttlMs);
+    const days = interaction.options.getInteger('expired');
+    const result = await issueTokenDays(user.id, days);
     await interaction.editReply(
       [
         `Token created for Discord User ID: \`${user.id}\`.`,

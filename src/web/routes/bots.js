@@ -3,6 +3,8 @@ const BotManager = require('../../manager/BotManager');
 const { getBotLogs, logger } = require('../../services/logger');
 const { authenticate } = require('../auth/authenticate');
 const { validateWebChatInput, parseChatInput } = require('../commandParser');
+const { validateChatMessage } = require('../../utils/validators');
+const config = require('../../config');
 
 function safeSnapshot(instance) {
   const snapshot = instance.toJSON();
@@ -14,6 +16,8 @@ function safeSnapshot(instance) {
 }
 
 function mapError(err) {
+  if (err?.code === 'RATE_LIMITED') return [429, err.message];
+  if (err?.code === 'BOT_USER_QUOTA_REACHED') return [409, err.message];
   if (err?.code === 'BOT_MUST_BE_STOPPED') return [409, err.message];
   if (err?.code === 'RESOURCE_ACCESS_DENIED') return [404, 'Bot not found.'];
   if (err?.code === 'INVALID_BOT_ID') return [400, err.message];
@@ -39,8 +43,19 @@ function createBotsRouter(botManager = BotManager) {
       );
       return res.status(201).json({ bot: safeSnapshot(instance) });
     } catch (err) {
-      logger.error(`[Web] create bot failed: ${err?.message || err}`);
       const [status, message] = mapError(err);
+      logger.error(
+        {
+          requestId: req.requestId,
+          userId: req.principal?.userId,
+          route: 'POST /api/bots',
+          statusCode: status,
+          err,
+        },
+        'Web bot creation failed.'
+      );
+      if (err?.retryAfterMs)
+        res.set('Retry-After', String(Math.ceil(err.retryAfterMs / 1_000)));
       return res.status(status).json({ error: message });
     }
   });
@@ -75,7 +90,17 @@ function createBotsRouter(botManager = BotManager) {
       );
       return res.json({ bot: safeSnapshot(instance) });
     } catch (err) {
-      logger.error(`[Web] edit bot failed: ${err?.message || err}`);
+      logger.error(
+        {
+          requestId: req.requestId,
+          userId: req.principal?.userId,
+          botId: req.params.botId,
+          route: 'PATCH /api/bots/:botId',
+          statusCode: mapError(err)[0],
+          err,
+        },
+        'Web bot edit failed.'
+      );
       const [status, message] = mapError(err);
       return res.status(status).json({ error: message });
     }
@@ -86,7 +111,17 @@ function createBotsRouter(botManager = BotManager) {
       await botManager.deleteBot(req.principal, req.params.botId);
       return res.status(204).end();
     } catch (err) {
-      logger.error(`[Web] delete bot failed: ${err?.message || err}`);
+      logger.error(
+        {
+          requestId: req.requestId,
+          userId: req.principal?.userId,
+          botId: req.params.botId,
+          route: 'DELETE /api/bots/:botId',
+          statusCode: mapError(err)[0],
+          err,
+        },
+        'Web bot deletion failed.'
+      );
       const [status, message] = mapError(err);
       return res.status(status).json({ error: message });
     }
@@ -106,7 +141,17 @@ function createBotsRouter(botManager = BotManager) {
         );
         return res.json({ bot: safeSnapshot(instance) });
       } catch (err) {
-        logger.error(`[Web] ${action} bot failed: ${err?.message || err}`);
+        logger.error(
+          {
+            requestId: req.requestId,
+            userId: req.principal?.userId,
+            botId: req.params.botId,
+            route: `POST /api/bots/:botId/${action}`,
+            statusCode: mapError(err)[0],
+            err,
+          },
+          `Web bot ${action} failed.`
+        );
         const [status, message] = mapError(err);
         return res.status(status).json({ error: message });
       }
@@ -117,13 +162,30 @@ function createBotsRouter(botManager = BotManager) {
     const validation = validateWebChatInput(req.body?.message);
     if (!validation.valid)
       return res.status(422).json({ error: validation.reason });
+    const policy = validateChatMessage(
+      validation.value,
+      config.web.allowedCommandPrefixes
+    );
+    if (!policy.valid) return res.status(422).json({ error: policy.reason });
     try {
       const parsed = parseChatInput(validation.value);
       await botManager.chatBot(req.principal, req.params.botId, parsed.text);
       return res.status(202).json({ kind: parsed.kind });
     } catch (err) {
-      logger.error(`[Web] chat failed: ${err?.message || err}`);
       const [status, message] = mapError(err);
+      logger.error(
+        {
+          requestId: req.requestId,
+          userId: req.principal?.userId,
+          botId: req.params.botId,
+          route: 'POST /api/bots/:botId/chat',
+          statusCode: status,
+          err,
+        },
+        'Web chat failed.'
+      );
+      if (err?.retryAfterMs)
+        res.set('Retry-After', String(Math.ceil(err.retryAfterMs / 1_000)));
       return res.status(status).json({ error: message });
     }
   });

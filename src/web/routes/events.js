@@ -4,6 +4,8 @@ const { subscribe } = require('../sse/eventHub');
 const { getBotLogs } = require('../../services/logger');
 const BotManager = require('../../manager/BotManager');
 
+const activeStreams = new Map();
+
 function writeEvent(res, event) {
   res.write(`id: ${event.id}\n`);
   res.write(`event: ${event.event}\n`);
@@ -13,6 +15,8 @@ function writeEvent(res, event) {
 function createEventsRouter(botManager = BotManager) {
   const router = express.Router();
   router.get('/', authenticate, (req, res) => {
+    const previous = activeStreams.get(req.principal.userId);
+    previous?.close();
     res.status(200);
     res.set({
       'Content-Type': 'text/event-stream',
@@ -80,13 +84,50 @@ function createEventsRouter(botManager = BotManager) {
     };
     const unsubscribe = subscribe(onEvent);
     const keepalive = setInterval(() => res.write(': keepalive\n\n'), 20_000);
+    let expiryTimer;
+    let closed = false;
 
     const cleanup = () => {
+      if (closed) return;
+      closed = true;
       clearInterval(keepalive);
+      clearTimeout(expiryTimer);
       unsubscribe();
+      if (activeStreams.get(req.principal.userId)?.res === res)
+        activeStreams.delete(req.principal.userId);
     };
+
+    const closeForSessionExpiry = () => {
+      const remaining = new Date(req.session?.expiresAt).getTime() - Date.now();
+      if (remaining > 0) {
+        expiryTimer = setTimeout(
+          closeForSessionExpiry,
+          Math.min(remaining, 2_147_483_647)
+        );
+        expiryTimer.unref?.();
+        return;
+      }
+      if (closed) return;
+      writeEvent(res, {
+        event: 'auth:expired',
+        data: { message: 'Session expired.' },
+      });
+      cleanup();
+      res.end();
+    };
+    activeStreams.set(req.principal.userId, {
+      res,
+      close: () => {
+        cleanup();
+        res.end();
+      },
+    });
+    expiryTimer = setTimeout(closeForSessionExpiry, 0);
+    expiryTimer.unref?.();
     req.on('close', cleanup);
+    req.on('aborted', cleanup);
     res.on('close', cleanup);
+    res.on('error', cleanup);
   });
   return router;
 }

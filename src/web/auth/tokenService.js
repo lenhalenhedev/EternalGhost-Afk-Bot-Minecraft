@@ -3,6 +3,8 @@ const jwt = require('jsonwebtoken');
 const db = require('../../config/database');
 const { publish } = require('../sse/eventHub');
 const {
+  daysToMilliseconds,
+  validateTokenTtlDays,
   validateTokenTtlMs,
   toJwtExpiresInSeconds,
 } = require('./tokenValidation');
@@ -38,6 +40,20 @@ function signToken(userId, ttlMs) {
   });
 }
 
+function calculateRenewedExpiry(currentExpiry, addedDays, now = new Date()) {
+  const validation = validateTokenTtlDays(addedDays);
+  if (!validation.valid) throw new Error(validation.reason);
+  const expiry = new Date(currentExpiry);
+  const current = new Date(now);
+  if (Number.isNaN(expiry.getTime()) || Number.isNaN(current.getTime())) {
+    throw new Error('Token expiry dates must be valid.');
+  }
+  const capped = new Date(current);
+  capped.setUTCFullYear(capped.getUTCFullYear() + 1);
+  const renewed = new Date(expiry.getTime() + daysToMilliseconds(addedDays));
+  return renewed < capped ? renewed : capped;
+}
+
 async function issueToken(userId, ttlMs) {
   const normalizedUserId = normalizeUserId(userId);
   const token = signToken(normalizedUserId, ttlMs);
@@ -63,6 +79,46 @@ async function issueToken(userId, ttlMs) {
     token,
     metadata: tokenMetadata(rows[0]),
   };
+}
+
+async function issueTokenDays(userId, days) {
+  return issueToken(userId, daysToMilliseconds(days));
+}
+
+async function renewToken(userId, addedDays) {
+  const normalizedUserId = normalizeUserId(userId);
+  const validation = validateTokenTtlDays(addedDays);
+  if (!validation.valid) throw new Error(validation.reason);
+
+  const { rows } = await db.query(
+    `SELECT user_id, expires_at
+       FROM web_tokens
+      WHERE user_id = $1`,
+    [normalizedUserId]
+  );
+  if (rows.length === 0) throw new Error('Token not found.');
+
+  const expiresAt = calculateRenewedExpiry(rows[0].expires_at, addedDays);
+  const ttlMs = expiresAt.getTime() - Date.now();
+  if (ttlMs < 1_000)
+    throw new Error(
+      'Renewal duration must leave at least one second of token lifetime.'
+    );
+
+  const token = signToken(normalizedUserId, ttlMs);
+  const tokenHash = hashToken(token);
+  const issuedAt = new Date();
+  const result = await db.withTransaction((client) =>
+    client.query(
+      `UPDATE web_tokens
+          SET token_hash = $2, issued_at = $3, expires_at = $4
+        WHERE user_id = $1
+      RETURNING user_id, issued_at, expires_at`,
+      [normalizedUserId, tokenHash, issuedAt, expiresAt]
+    )
+  );
+  publish('auth:revoked', { userId: normalizedUserId });
+  return { token, metadata: tokenMetadata(result.rows[0]) };
 }
 
 async function verifyActiveToken(token) {
@@ -127,6 +183,9 @@ module.exports = {
   normalizeUserId,
   signToken,
   issueToken,
+  issueTokenDays,
+  renewToken,
+  calculateRenewedExpiry,
   verifyActiveToken,
   revokeToken,
   listTokenMetadata,

@@ -1,5 +1,30 @@
+'use strict';
+
+const MIN_TOKEN_TTL_DAYS = 1;
+const MAX_TOKEN_TTL_DAYS = 365;
+const MS_PER_DAY = 24 * 60 * 60 * 1_000;
 const MIN_TOKEN_TTL_MS = 1_000;
-const MAX_TOKEN_TTL_MS = Number.MAX_SAFE_INTEGER;
+const MAX_TOKEN_TTL_MS = MAX_TOKEN_TTL_DAYS * MS_PER_DAY;
+
+function validateTokenTtlDays(value) {
+  if (
+    !Number.isSafeInteger(value) ||
+    value < MIN_TOKEN_TTL_DAYS ||
+    value > MAX_TOKEN_TTL_DAYS
+  ) {
+    return {
+      valid: false,
+      reason: `Token expiry must be a whole number of days between ${MIN_TOKEN_TTL_DAYS} and ${MAX_TOKEN_TTL_DAYS}.`,
+    };
+  }
+  return { valid: true, value };
+}
+
+function daysToMilliseconds(days) {
+  const result = validateTokenTtlDays(days);
+  if (!result.valid) throw new Error(result.reason);
+  return days * MS_PER_DAY;
+}
 
 function validateTokenTtlMs(value) {
   if (
@@ -10,8 +35,7 @@ function validateTokenTtlMs(value) {
   ) {
     return {
       valid: false,
-      reason:
-        'Token expiry must be a safe integer in milliseconds, divisible by 1000, between 1000 and 9007199254740991.',
+      reason: `Token expiry must be a whole number of days between ${MIN_TOKEN_TTL_DAYS} and ${MAX_TOKEN_TTL_DAYS}.`,
     };
   }
   return { valid: true, value };
@@ -24,8 +48,12 @@ function toJwtExpiresInSeconds(ttlMs) {
 }
 
 module.exports = {
+  MIN_TOKEN_TTL_DAYS,
+  MAX_TOKEN_TTL_DAYS,
   MIN_TOKEN_TTL_MS,
   MAX_TOKEN_TTL_MS,
+  validateTokenTtlDays,
+  daysToMilliseconds,
   validateTokenTtlMs,
   toJwtExpiresInSeconds,
 };
