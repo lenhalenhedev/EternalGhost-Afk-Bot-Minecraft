@@ -16,6 +16,14 @@ const CHANNEL_NAME = 'eternalghost-dashboard-sse';
 const HEARTBEAT_MS = 1_000;
 const LEADER_TIMEOUT_MS = 4_000;
 const MAX_BACKOFF_MS = 30_000;
+let fallbackTabSequence = 0;
+
+export function createTabId() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  fallbackTabSequence += 1;
+  return `tab-${Date.now().toString(36)}-${fallbackTabSequence.toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
 
 function applyEvent(eventName, event, stores) {
   if (eventName === 'auth:revoked' || eventName === 'auth:expired') {
@@ -52,7 +60,7 @@ export function useSse(enabled = true) {
   useEffect(() => {
     if (!enabled) return undefined;
     const stores = { upsertBot, removeBot, appendLog };
-    const tabId = crypto.randomUUID();
+    const tabId = createTabId();
     const channel =
       typeof BroadcastChannel === 'function'
         ? new BroadcastChannel(`${CHANNEL_NAME}:${userId}`)

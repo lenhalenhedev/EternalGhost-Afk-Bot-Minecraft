@@ -58,6 +58,14 @@ test('every dashboard form control has explicit id and name attributes', () => {
   assert.ok((controls.match(/register\('/g) || []).length >= 7);
 });
 
+test('SSE tab identity has a fallback when crypto.randomUUID is unavailable', () => {
+  const source = read('web/src/hooks/useSse.js');
+  assert.match(source, /createTabId/);
+  assert.match(source, /globalThis\.crypto\?\.randomUUID\?\./);
+  assert.match(source, /fallbackTabSequence/);
+  assert.doesNotMatch(source, /const tabId = crypto\.randomUUID\(\)/);
+});
+
 test('SSE uses one BroadcastChannel leader with heartbeat election and bounded jittered backoff', () => {
   const source = read('web/src/hooks/useSse.js');
   assert.match(source, /BroadcastChannel/);
