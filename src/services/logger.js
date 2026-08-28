@@ -38,7 +38,8 @@ function normalizeFields(fields = {}) {
   const normalized = {};
   for (const key of ['requestId', 'userId', 'botId', 'route', 'statusCode']) {
     if (fields[key] !== undefined && fields[key] !== null)
-      normalized[key] = safeText(fields[key]);
+      normalized[key] =
+        key === 'statusCode' ? Number(fields[key]) : safeText(fields[key]);
   }
   if (fields.err) normalized.err = normalizeError(fields.err);
   return normalized;

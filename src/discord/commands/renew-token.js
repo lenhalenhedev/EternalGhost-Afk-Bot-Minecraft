@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const {
   listTokenMetadata,
   renewToken,
@@ -9,6 +13,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('renew-token')
     .setDescription('Renew a Web dashboard token')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((option) =>
       option
         .setName('user')

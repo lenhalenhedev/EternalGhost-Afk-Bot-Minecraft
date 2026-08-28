@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const { issueTokenDays } = require('../../web/auth/tokenService');
 const { MAX_TOKEN_TTL_DAYS } = require('../../web/auth/tokenValidation');
 
@@ -6,6 +10,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('new-token')
     .setDescription('Issue a Web dashboard token to a Discord user')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addUserOption((option) =>
       option
         .setName('user')
