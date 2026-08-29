@@ -3,6 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
@@ -74,6 +75,55 @@ test('SSE uses one BroadcastChannel leader with heartbeat election and bounded j
   assert.match(source, /MAX_BACKOFF_MS = 30_000/);
   assert.match(source, /2 \*\* reconnectAttempt/);
   assert.match(source, /Math\.random\(\)/);
+});
+test('toast IDs use a standards-compliant UUID v4 fallback without requiring randomUUID', () => {
+  const uuidSource = read('web/src/lib/uuid.js');
+  const toastSource = read('web/src/state/toastStore.js');
+  assert.match(uuidSource, /export function createUuid/);
+  assert.match(uuidSource, /getRandomValues/);
+  assert.match(uuidSource, /0x40/);
+  assert.match(uuidSource, /0x80/);
+  assert.match(toastSource, /createUuid\(\)/);
+  assert.doesNotMatch(toastSource, /crypto\.randomUUID/);
+});
+
+test('UUID fallback produces a standards-compliant UUID v4 without randomUUID', () => {
+  const source = read('web/src/lib/uuid.js').replace(
+    'export function createUuid',
+    'function createUuid'
+  );
+  const sandbox = {
+    Uint8Array,
+    Math: { floor: () => 0, random: () => 0 },
+    crypto: {
+      getRandomValues(bytes) {
+        bytes.fill(0);
+        return bytes;
+      },
+    },
+  };
+  vm.runInNewContext(`${source}\nthis.createUuid = createUuid;`, sandbox);
+
+  const uuid = sandbox.createUuid();
+  assert.match(
+    uuid,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  );
+});
+
+test('UUID helper delegates to native randomUUID when available', () => {
+  const source = read('web/src/lib/uuid.js').replace(
+    'export function createUuid',
+    'function createUuid'
+  );
+  const nativeUuid = '123e4567-e89b-42d3-a456-426614174000';
+  const sandbox = {
+    Uint8Array,
+    crypto: { randomUUID: () => nativeUuid },
+  };
+  vm.runInNewContext(`${source}\nthis.createUuid = createUuid;`, sandbox);
+
+  assert.equal(sandbox.createUuid(), nativeUuid);
 });
 
 test('frontend exposes acknowledgement session expiry and unified 429 popup handling', () => {
