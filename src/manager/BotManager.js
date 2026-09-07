@@ -298,6 +298,10 @@ class BotManager {
   }
 
   async chatBot(principal, id, message) {
+    // Resolve and authorize the target bot BEFORE consuming the caller's chat
+    // quota. A denied (foreign/missing) request must not burn the caller's own
+    // cooldown slot or become a timing oracle (EG-009).
+    const instance = this.resolveAuthorizedBot(principal, id);
     const chatLimit = consumeChat(principal.userId);
     if (!chatLimit.allowed) {
       const error = new Error('Chat cooldown active.');
@@ -305,7 +309,7 @@ class BotManager {
       error.retryAfterMs = chatLimit.retryAfterMs;
       throw error;
     }
-    await this.resolveAuthorizedBot(principal, id).sendInput(message);
+    await instance.sendInput(message);
   }
 
   // ─── Queries ───
