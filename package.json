@@ -7,7 +7,7 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "build:web": "npm --prefix web run build",
-    "test": "node --test",
+    "test": "node --require ./tests/support/envSetup.js --test",
     "db:schema": "psql \"$DATABASE_URL\" -f db/schema.sql",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

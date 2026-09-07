@@ -1,6 +1,15 @@
 'use strict';
 require('dotenv').config();
-const config = require('./src/config');
+let config;
+try {
+  config = require('./src/config');
+} catch (err) {
+  // src/config throws (rather than exiting) so the same module is safe to load
+  // inside test workers. The real process is expected to fail closed: log and
+  // exit non-zero so the process manager/CI reports the misconfiguration.
+  console.error(`[CONFIG] Fatal: ${err?.message || err}`);
+  process.exit(1);
+}
 const { logger, shutdown: shutdownLogger } = require('./src/services/logger');
 const BotManager = require('./src/manager/BotManager');
 const client = require('./src/discord/client');

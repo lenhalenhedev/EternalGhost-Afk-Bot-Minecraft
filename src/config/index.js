@@ -123,8 +123,14 @@ try {
     },
   };
 } catch (err) {
-  console.error(`[CONFIG] Fatal: ${err.message}`);
-  process.exit(1);
+  // Never call process.exit() at module scope. Doing so would silently kill any
+  // consumer that requires this module in a worker/subprocess (notably the
+  // node:test runner) instead of surfacing a catchable error. Startup entry
+  // points (index.js) translate a throw into the original fail-closed exit(1).
+  const fatal = new Error(`Configuration error: ${err?.message || err}`);
+  fatal.code = 'CONFIG_INVALID';
+  fatal.cause = err;
+  throw fatal;
 }
 
 module.exports = config;
