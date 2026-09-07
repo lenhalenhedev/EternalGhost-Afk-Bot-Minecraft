@@ -273,5 +273,5 @@ SSE/cookie model unchanged by these fixes.
 - Fix branch: `security-fix/eternalghost-afk-bot-2026-09-07`
 - Base branch: `main`
 - Commit list: `9462ffe … HEAD` (10 remediation commits + artifacts commit).
-- PR URL/number: to be recorded after push.
+- Pull Request: [#7](https://github.com/lenhalenhedev/EternalGhost-Afk-Bot-Minecraft/pull/7)
 - **Merge was not performed** and must not be performed by this agent.
