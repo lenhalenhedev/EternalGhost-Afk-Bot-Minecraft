@@ -13,6 +13,10 @@ export default defineConfig([
       'web/dist/**',
       'logs/**',
       'data/**',
+      // Generated/external artifacts that are not JS source: the read-only
+      // security audit report and the machine-generated remediation results.
+      'report/**',
+      'docs/security-fix-*',
     ],
   },
   {
