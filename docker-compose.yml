@@ -6,9 +6,21 @@ services:
     container_name: eternalghost-afk-bot
     restart: unless-stopped
     init: true
+    # Security hardening: bind to a private/shared network or loopback by
+    # default rather than exposing a plaintext HTTP origin to 0.0.0.0 (EG-012).
+    # When the reverse proxy runs on another host, publish deliberately:
+    #   WEB_BIND_HOST=0.0.0.0
+    # or expose only on an internal Docker network and let the proxy reach it.
     env_file:
       - .env
     ports:
-      - "${WEB_PORT:-8080}:${WEB_PORT:-8080}"
+      - "${WEB_BIND_HOST:-127.0.0.1}:${WEB_PORT:-8080}:${WEB_PORT:-8080}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./logs:/app/logs

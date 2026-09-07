@@ -3,3 +3,5 @@ node_modules/
 logs/
 *.log
 *.gz
+# Legacy run.js capture file, in case an old checkout ever wrote one.
+log.txt
