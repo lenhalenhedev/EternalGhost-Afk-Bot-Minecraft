@@ -2,8 +2,13 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const logFile = path.join(__dirname, 'log.txt');
-// Ghi đè log.txt mỗi lần chạy mới (đổi thành 'a' nếu muốn giữ log cũ)
+// Write runtime output under logs/ (gitignored) instead of an unignored
+// log.txt in the repo root so build/startup output can never be committed
+// accidentally (EG-013).
+const logDir = path.join(__dirname, 'logs');
+fs.mkdirSync(logDir, { recursive: true });
+const logFile = path.join(logDir, 'run.log');
+// Overwrite run.log on each fresh run (use 'a' to append).
 const logStream = fs.createWriteStream(logFile, { flags: 'w' });
 
 function log(message) {
@@ -32,7 +37,9 @@ function runStep(index) {
 
   const child = spawn(step.cmd, step.args, {
     cwd: step.cwd,
-    shell: true,
+    // No shell: the command and arguments are fixed literals, so invoking a
+    // shell adds an unnecessary indirection surface (EG-013).
+    shell: false,
   });
 
   child.stdout.on('data', (data) => {

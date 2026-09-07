@@ -39,6 +39,37 @@ function ipListEnv(key) {
   return values;
 }
 
+/**
+ * Parse WEB_TRUST_PROXY into a value accepted by Express's `trust proxy`.
+ * Accepts either a hop count (a small non-negative integer) or a
+ * comma/space-separated list of trusted proxy IPs / CIDRs. We deliberately do
+ * NOT accept the boolean true, which would trust arbitrary X-Forwarded-For
+ * values from any source and let an attacker spoof the client IP to defeat the
+ * login rate limiter. Returns undefined when unset (Express defaults to false).
+ */
+function trustProxyEnv(key) {
+  const value = optionalEnv(key).trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) {
+    const hops = Number(value);
+    if (!Number.isSafeInteger(hops) || hops < 1 || hops > 10) {
+      throw new Error(`${key} hop count must be between 1 and 10`);
+    }
+    return hops;
+  }
+  const entries = value.split(/[\s,]+/).filter(Boolean);
+  const CIDR_RE = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+  const valid = entries.every(
+    (entry) => net.isIP(entry) !== 0 || CIDR_RE.test(entry)
+  );
+  if (!valid) {
+    throw new Error(
+      `${key} must be a hop count or a comma/space list of trusted proxy IPs/CIDRs`
+    );
+  }
+  return entries;
+}
+
 const HARDCODED_LOG_CHANNEL_ID = '';
 
 function validateHexKey(key, name) {
@@ -56,6 +87,20 @@ try {
 
   const oldKey = optionalEnv('OLD_ENCRYPTION_KEY');
   if (oldKey) validateHexKey(oldKey, 'OLD_ENCRYPTION_KEY');
+
+  // Optional dedicated secret for signing dashboard JWTs. Keeping it separate
+  // from ENCRYPTION_KEY lets operators rotate encryption keys without silently
+  // invalidating every active session, and stops a single leaked secret from
+  // granting both session forgery and Minecraft-password decryption (EG-006).
+  const webJwtSecret = optionalEnv('WEB_JWT_SECRET');
+  if (webJwtSecret && webJwtSecret.length < 32) {
+    throw new Error('WEB_JWT_SECRET must be at least 32 characters long.');
+  }
+
+  // Only trust a reverse proxy when the operator explicitly configures it.
+  // Unset (undefined) keeps Express's default of no trust, which is correct for
+  // direct-to-Internet HTTP deployments and prevents X-Forwarded-For spoofing.
+  const webTrustProxy = trustProxyEnv('WEB_TRUST_PROXY');
 
   const adminIds = requireEnv('ADMIN_USER_IDS')
     .split(',')
@@ -86,6 +131,12 @@ try {
     web: {
       port: intEnv('WEB_PORT', 8080, { min: 1, max: 65535 }),
       https: boolEnv('WEB_HTTPS', false),
+      jwtSecret: webJwtSecret || encryptionKey,
+      jwtSecretUsesFallback: !webJwtSecret,
+      trustProxy: webTrustProxy,
+      globalLimitPerMin: intEnv('WEB_GLOBAL_LIMIT_PER_MIN', 600, { min: 1 }),
+      botsLimitPerMin: intEnv('WEB_BOTS_LIMIT_PER_MIN', 300, { min: 1 }),
+      eventsLimitPerMin: intEnv('WEB_EVENTS_LIMIT_PER_MIN', 30, { min: 1 }),
       allowedCommandPrefixes: optionalEnv('ALLOWED_COMMAND_PREFIXES')
         .split(',')
         .map((value) => value.trim().toLowerCase())
@@ -123,8 +174,14 @@ try {
     },
   };
 } catch (err) {
-  console.error(`[CONFIG] Fatal: ${err.message}`);
-  process.exit(1);
+  // Never call process.exit() at module scope. Doing so would silently kill any
+  // consumer that requires this module in a worker/subprocess (notably the
+  // node:test runner) instead of surfacing a catchable error. Startup entry
+  // points (index.js) translate a throw into the original fail-closed exit(1).
+  const fatal = new Error(`Configuration error: ${err?.message || err}`);
+  fatal.code = 'CONFIG_INVALID';
+  fatal.cause = err;
+  throw fatal;
 }
 
 module.exports = config;

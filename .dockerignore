@@ -12,6 +12,7 @@ logs
 data
 *.log
 *.gz
+log.txt
 
 tests
 scripts

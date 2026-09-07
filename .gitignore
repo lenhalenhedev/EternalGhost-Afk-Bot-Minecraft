@@ -3,3 +3,7 @@ node_modules/
 logs/
 *.log
 *.gz
+# Legacy run.js capture file, in case an old checkout ever wrote one.
+log.txt
+# Frontend production build output (built at image build time).
+web/dist/

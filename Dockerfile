@@ -29,11 +29,19 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=web-build /app/web/dist ./web/dist
 COPY . .
 
-RUN mkdir -p /app/logs && chown -R node:node /app
+# Make only the log directory writable by the runtime user. The application
+# code and node_modules stay root-owned and read-only for uid `node` so a
+# compromised process cannot tamper with the code it executes (EG-011).
+RUN mkdir -p /app/logs && chown -R node:node /app/logs
 
 USER node
 
 VOLUME ["/app/logs"]
 EXPOSE 8080
 
-CMD ["npm", "run", "start"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.WEB_PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+# Equivalent to `npm run start` but without the npm wrapper, which needs no
+# writable filesystem beyond the log volume under a read-only rootfs.
+CMD ["node", "index.js"]
