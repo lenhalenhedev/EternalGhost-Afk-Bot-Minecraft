@@ -56,6 +56,10 @@ module.exports = {
         '',
         'Copy this token now. It will not be shown again:',
         `\`${result.token}\``,
+        '',
+        '⚠️ Treat this like a password: do not screenshot it or paste it into shared ' +
+          'chats, and prefer the shortest practical expiry. Anyone holding it can ' +
+          'sign into the dashboard for its full lifetime.',
       ].join('\n')
     );
   },
