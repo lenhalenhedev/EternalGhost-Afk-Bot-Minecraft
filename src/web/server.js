@@ -5,20 +5,53 @@ const crypto = require('node:crypto');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
+const { rateLimit } = require('express-rate-limit');
 const config = require('../config');
 const BotManager = require('../manager/BotManager');
 const { createAuthRouter } = require('./routes/auth');
 const { createBotsRouter } = require('./routes/bots');
 const { createEventsRouter } = require('./routes/events');
 const { createAdminTokenRouter } = require('./routes/adminTokens');
+const { sameOriginGuard } = require('./middleware/sameOriginGuard');
 const { logger } = require('../services/logger');
 
 const WEB_PORT = config.web.port;
 const WEB_DIST = path.resolve(__dirname, '../../web/dist');
 
+function makeRateLimiter(perMinute, message) {
+  return rateLimit({
+    windowMs: 60 * 1_000,
+    limit: perMinute,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: message },
+  });
+}
+
+const globalLimiter = makeRateLimiter(
+  config.web.globalLimitPerMin,
+  'Too many requests. Please slow down.'
+);
+const botsLimiter = makeRateLimiter(
+  config.web.botsLimitPerMin,
+  'Too many bot API requests. Please slow down.'
+);
+const eventsLimiter = makeRateLimiter(
+  config.web.eventsLimitPerMin,
+  'SSE reconnect too frequent. Please slow down.'
+);
+
 function createWebApp(botManager = BotManager) {
   const app = express();
   app.disable('x-powered-by');
+
+  // When the operator configures a trusted reverse proxy (Cloudflare and the
+  // like), Express must derive the real client IP from X-Forwarded-For so the
+  // rate limiters key on the actual client and not the proxy socket (EG-005).
+  // Unset means no proxy trust (correct for direct-to-Internet deployments).
+  if (config.web.trustProxy !== undefined) {
+    app.set('trust proxy', config.web.trustProxy);
+  }
   app.use(
     helmet({
       // The public protocol is terminated by Cloudflare. Keep the origin
@@ -49,10 +82,19 @@ function createWebApp(botManager = BotManager) {
   app.use(express.json({ limit: '32kb' }));
   app.use(cookieParser());
 
+  // Baseline throttle on every request (incl. /healthz and the SPA fallback)
+  // so an unauthenticated flood cannot saturate the shared Node process that
+  // also supervises the Minecraft bots (EG-008).
+  app.use(globalLimiter);
+
+  // CSRF defence-in-depth: reject cross-origin state-changing /api requests
+  // (EG-004). Mounted before every API router, including auth.
+  app.use('/api', sameOriginGuard);
+
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
   app.use('/api/auth', createAuthRouter());
-  app.use('/api/bots', createBotsRouter(botManager));
-  app.use('/api/events', createEventsRouter(botManager));
+  app.use('/api/bots', botsLimiter, createBotsRouter(botManager));
+  app.use('/api/events', eventsLimiter, createEventsRouter(botManager));
   app.use('/api/admin/tokens', createAdminTokenRouter());
 
   if (fs.existsSync(WEB_DIST)) {

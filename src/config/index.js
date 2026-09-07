@@ -39,6 +39,37 @@ function ipListEnv(key) {
   return values;
 }
 
+/**
+ * Parse WEB_TRUST_PROXY into a value accepted by Express's `trust proxy`.
+ * Accepts either a hop count (a small non-negative integer) or a
+ * comma/space-separated list of trusted proxy IPs / CIDRs. We deliberately do
+ * NOT accept the boolean true, which would trust arbitrary X-Forwarded-For
+ * values from any source and let an attacker spoof the client IP to defeat the
+ * login rate limiter. Returns undefined when unset (Express defaults to false).
+ */
+function trustProxyEnv(key) {
+  const value = optionalEnv(key).trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) {
+    const hops = Number(value);
+    if (!Number.isSafeInteger(hops) || hops < 1 || hops > 10) {
+      throw new Error(`${key} hop count must be between 1 and 10`);
+    }
+    return hops;
+  }
+  const entries = value.split(/[\s,]+/).filter(Boolean);
+  const CIDR_RE = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+  const valid = entries.every(
+    (entry) => net.isIP(entry) !== 0 || CIDR_RE.test(entry)
+  );
+  if (!valid) {
+    throw new Error(
+      `${key} must be a hop count or a comma/space list of trusted proxy IPs/CIDRs`
+    );
+  }
+  return entries;
+}
+
 const HARDCODED_LOG_CHANNEL_ID = '';
 
 function validateHexKey(key, name) {
@@ -65,6 +96,11 @@ try {
   if (webJwtSecret && webJwtSecret.length < 32) {
     throw new Error('WEB_JWT_SECRET must be at least 32 characters long.');
   }
+
+  // Only trust a reverse proxy when the operator explicitly configures it.
+  // Unset (undefined) keeps Express's default of no trust, which is correct for
+  // direct-to-Internet HTTP deployments and prevents X-Forwarded-For spoofing.
+  const webTrustProxy = trustProxyEnv('WEB_TRUST_PROXY');
 
   const adminIds = requireEnv('ADMIN_USER_IDS')
     .split(',')
@@ -97,6 +133,10 @@ try {
       https: boolEnv('WEB_HTTPS', false),
       jwtSecret: webJwtSecret || encryptionKey,
       jwtSecretUsesFallback: !webJwtSecret,
+      trustProxy: webTrustProxy,
+      globalLimitPerMin: intEnv('WEB_GLOBAL_LIMIT_PER_MIN', 600, { min: 1 }),
+      botsLimitPerMin: intEnv('WEB_BOTS_LIMIT_PER_MIN', 300, { min: 1 }),
+      eventsLimitPerMin: intEnv('WEB_EVENTS_LIMIT_PER_MIN', 30, { min: 1 }),
       allowedCommandPrefixes: optionalEnv('ALLOWED_COMMAND_PREFIXES')
         .split(',')
         .map((value) => value.trim().toLowerCase())
