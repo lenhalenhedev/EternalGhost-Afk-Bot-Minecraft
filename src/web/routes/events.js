@@ -56,27 +56,17 @@ function createEventsRouter(botManager = BotManager) {
 
     sendInitial();
     const onEvent = (event) => {
-      if (
-        event.event === 'auth:revoked' &&
-        event.data?.userId === req.principal.userId
-      ) {
+      const decision = eventDecision(event, {
+        userId: req.principal.userId,
+        visibleBotIds,
+      });
+      if (decision === 'ignore') return;
+      if (decision === 'revoke') {
         writeEvent(res, { ...event, data: { message: 'Session revoked.' } });
         cleanup();
         res.end();
         return;
       }
-      const botId = event.data?.botId || event.data?.snapshot?.id;
-      if (event.data?.ownerId && event.data.ownerId !== req.principal.userId)
-        return;
-      if (botId && event.event !== 'bot:created' && !visibleBotIds.has(botId))
-        return;
-      if (
-        event.event === 'bot:created' &&
-        event.data?.ownerId === req.principal.userId
-      ) {
-        visibleBotIds.add(botId);
-      }
-      if (event.event === 'bot:deleted') visibleBotIds.delete(botId);
       writeEvent(res, {
         ...event,
         data: sanitizeEventData(event.data),
@@ -136,7 +126,49 @@ function sanitizeEventData(data) {
   if (!data || typeof data !== 'object') return data;
   const safe = { ...data };
   delete safe.ownerId;
+  delete safe.userId;
   return safe;
 }
 
-module.exports = { createEventsRouter, writeEvent, sanitizeEventData };
+/**
+ * Decide whether an SSE hub event may be delivered to a given principal and
+ * how. Delivery is strictly scoped (fail-closed):
+ *  - auth:* events are per-user and are never broadcast to other users
+ *    (fixes EG-001 cross-user auth:revoked disclosure).
+ *  - bot events must either carry an ownerId equal to the principal, or
+ *    reference a bot already visible to the principal. An ownerless
+ *    bot:created snapshot (the historical EG-002 vector) is therefore dropped
+ *    for every subscriber.
+ *
+ * Returns 'ignore' | 'revoke' | 'deliver'.
+ */
+function eventDecision(event, { userId, visibleBotIds }) {
+  const name = event?.event;
+  const data = event?.data || {};
+  if (typeof name === 'string' && name.startsWith('auth:')) {
+    if (name === 'auth:revoked' && data.userId === userId) return 'revoke';
+    return 'ignore';
+  }
+  const botId = data.botId || data.snapshot?.id;
+  const ownerId = data.ownerId;
+  if (ownerId && ownerId !== userId) return 'ignore';
+  if (botId) {
+    if (ownerId) {
+      // Own bot event: keep it in this user's visible set so follow-up state,
+      // health and log events for the same bot keep flowing.
+      visibleBotIds.add(botId);
+    } else if (!visibleBotIds.has(botId)) {
+      // No owner context and not already visible -> deny by default.
+      return 'ignore';
+    }
+  }
+  if (name === 'bot:deleted') visibleBotIds.delete(botId);
+  return 'deliver';
+}
+
+module.exports = {
+  createEventsRouter,
+  writeEvent,
+  sanitizeEventData,
+  eventDecision,
+};
