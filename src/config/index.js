@@ -57,6 +57,15 @@ try {
   const oldKey = optionalEnv('OLD_ENCRYPTION_KEY');
   if (oldKey) validateHexKey(oldKey, 'OLD_ENCRYPTION_KEY');
 
+  // Optional dedicated secret for signing dashboard JWTs. Keeping it separate
+  // from ENCRYPTION_KEY lets operators rotate encryption keys without silently
+  // invalidating every active session, and stops a single leaked secret from
+  // granting both session forgery and Minecraft-password decryption (EG-006).
+  const webJwtSecret = optionalEnv('WEB_JWT_SECRET');
+  if (webJwtSecret && webJwtSecret.length < 32) {
+    throw new Error('WEB_JWT_SECRET must be at least 32 characters long.');
+  }
+
   const adminIds = requireEnv('ADMIN_USER_IDS')
     .split(',')
     .map((s) => s.trim())
@@ -86,6 +95,8 @@ try {
     web: {
       port: intEnv('WEB_PORT', 8080, { min: 1, max: 65535 }),
       https: boolEnv('WEB_HTTPS', false),
+      jwtSecret: webJwtSecret || encryptionKey,
+      jwtSecretUsesFallback: !webJwtSecret,
       allowedCommandPrefixes: optionalEnv('ALLOWED_COMMAND_PREFIXES')
         .split(',')
         .map((value) => value.trim().toLowerCase())

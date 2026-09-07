@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const db = require('../../config/database');
+const config = require('../../config');
 const { publish } = require('../sse/eventHub');
 const {
   daysToMilliseconds,
@@ -9,10 +10,12 @@ const {
   toJwtExpiresInSeconds,
 } = require('./tokenValidation');
 
-const JWT_SECRET_ENV = 'ENCRYPTION_KEY';
-
 function secret() {
-  const value = process.env[JWT_SECRET_ENV];
+  // Prefer a dedicated WEB_JWT_SECRET so session signing is independent of the
+  // encryption key. When an operator has not yet set it we fall back to
+  // ENCRYPTION_KEY for backward compatibility; config.web.jwtSecretUsesFallback
+  // records that state so index.js can emit a startup warning (EG-006).
+  const value = config.web.jwtSecret;
   if (!value) throw new Error('Token signing key is not configured.');
   return value;
 }
@@ -127,7 +130,10 @@ async function verifyActiveToken(token) {
   }
   let payload;
   try {
-    payload = jwt.verify(token, secret());
+    // Pin the expected algorithm family. Tokens are HMAC-signed with a string
+    // secret; never let a future refactor or a permissive library accept a
+    // different algorithm for the same key material (EG-007).
+    payload = jwt.verify(token, secret(), { algorithms: ['HS256'] });
   } catch {
     throw new Error('Invalid or expired token.');
   }

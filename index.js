@@ -10,6 +10,13 @@ try {
   console.error(`[CONFIG] Fatal: ${err?.message || err}`);
   process.exit(1);
 }
+if (config.web.jwtSecretUsesFallback) {
+  console.warn(
+    '[CONFIG] Warning: WEB_JWT_SECRET is not set; falling back to ENCRYPTION_KEY ' +
+      'for dashboard JWT signing. Set a dedicated WEB_JWT_SECRET (>=32 chars) so ' +
+      'session signing is independent of credential encryption.'
+  );
+}
 const { logger, shutdown: shutdownLogger } = require('./src/services/logger');
 const BotManager = require('./src/manager/BotManager');
 const client = require('./src/discord/client');
