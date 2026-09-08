@@ -13,8 +13,12 @@ const {
   consumeChat,
   consumeBotCreation,
 } = require('../services/accountRateLimits');
+const { AsyncLock } = require('../utils/asyncLock');
 
 const RESTART_PAUSE_MS = 1_500;
+// Single mutex covering bot creation (EG-005). Creation is a rare, already
+// rate-limited admin action, so one key is simpler and deadlock-free.
+const CREATE_LOCK_KEY = 'bot:create';
 const SUMMARY_INTERVAL_MIN = 15;
 const SUMMARY_INTERVAL_BOUNDS = { min: 10, max: 30 };
 const CANONICAL_UUID_V4 =
@@ -80,6 +84,8 @@ class BotManager {
     });
     // FIX: Track the cron task so it can be stopped on shutdown
     this._cronTask = null;
+    // EG-005: serialises the create-bot capacity check + registration.
+    this._createLock = new AsyncLock();
   }
 
   // ─── Bootstrap ───
@@ -147,6 +153,20 @@ class BotManager {
       error.retryAfterMs = creationLimit.retryAfterMs;
       throw error;
     }
+
+    // EG-005: the capacity check, the duplicate check, the persistence write
+    // and the in-memory registration form one critical section. Previously
+    // every concurrent request read the same count before any of them awaited,
+    // so several requests from one slot below the limit all succeeded. A
+    // single creation mutex serialises them; the database additionally
+    // re-checks both quotas inside the creating transaction so the invariant
+    // also holds across replicas.
+    return this._createLock.runExclusive(CREATE_LOCK_KEY, () =>
+      this._createBotExclusive(opts, principal)
+    );
+  }
+
+  async _createBotExclusive(opts, principal) {
     const ownedBotCount = [...this._bots.values()].filter(
       (instance) => instance.record.createdBy === principal.userId
     ).length;
@@ -168,14 +188,27 @@ class BotManager {
       );
     }
     if (this._bots.size >= config.limits.maxBots) {
-      throw new Error(`Maximum bot limit (${config.limits.maxBots}) reached.`);
+      const error = new Error(
+        `Maximum bot limit (${config.limits.maxBots}) reached.`
+      );
+      error.code = 'BOT_QUOTA_REACHED';
+      throw error;
     }
-    await Persistence.saveBotWithActivity(record, 'created', principal.userId, {
-      username: record.username,
-      host: record.host,
-      port: record.port,
-      version: record.version,
-    });
+    await Persistence.createBotWithQuota(
+      record,
+      'created',
+      principal.userId,
+      {
+        username: record.username,
+        host: record.host,
+        port: record.port,
+        version: record.version,
+      },
+      {
+        maxBots: config.limits.maxBots,
+        maxBotsPerUser: config.limits.maxBotsPerUser,
+      }
+    );
     const instance = this._register(record);
     publish('bot:created', {
       botId: instance.id,
@@ -473,4 +506,8 @@ class BotManager {
   }
 }
 
-module.exports = new BotManager();
+const botManager = new BotManager();
+// The class is exported alongside the shared instance so quota/lifecycle
+// behaviour can be exercised against an isolated manager in tests.
+botManager.BotManager = BotManager;
+module.exports = botManager;
