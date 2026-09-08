@@ -8,6 +8,8 @@ const {
   validateTokenTtlDays,
   validateTokenTtlMs,
   toJwtExpiresInSeconds,
+  MIN_TOKEN_TTL_MS,
+  MAX_TOKEN_TTL_MS,
 } = require('./tokenValidation');
 
 function secret() {
@@ -35,12 +37,49 @@ function hashToken(token) {
     .digest('hex');
 }
 
-function signToken(userId, ttlMs) {
+/** Floor a millisecond timestamp to a whole second (JWT `iat`/`exp` granularity). */
+function toWholeSecond(ms) {
+  return Math.floor(ms / 1_000) * 1_000;
+}
+
+/**
+ * Sign a dashboard token.
+ *
+ * EG-002: the payload used to contain only `userId` plus library-generated
+ * second-resolution timestamps, so two reissues for the same user and TTL
+ * inside one Unix second produced a byte-identical token and therefore an
+ * identical `token_hash`. The UPSERT "rotated" the credential without
+ * invalidating the previous bearer. Every issuance now carries a random `jti`
+ * and an explicitly computed whole-second `iat`/`exp` pair.
+ */
+function buildSignedToken(userId, ttlMs, options = {}) {
   const validated = validateTokenTtlMs(ttlMs);
   if (!validated.valid) throw new Error(validated.reason);
-  return jwt.sign({ userId: normalizeUserId(userId) }, secret(), {
-    expiresIn: toJwtExpiresInSeconds(ttlMs),
-  });
+  const normalizedUserId = normalizeUserId(userId);
+  const issuedAtMs = toWholeSecond(options.issuedAtMs ?? Date.now());
+  const expiresAtMs = issuedAtMs + validated.value;
+  const jti = options.jti || crypto.randomUUID();
+  // jsonwebtoken derives `exp` from `payload.iat` when it is present, so
+  // supplying the canonical issued-at second pins both claims exactly and
+  // removes any race with the wall clock between signing and persisting.
+  const token = jwt.sign(
+    { userId: normalizedUserId, jti, iat: issuedAtMs / 1_000 },
+    secret(),
+    {
+      algorithm: 'HS256',
+      expiresIn: toJwtExpiresInSeconds(validated.value),
+    }
+  );
+  return {
+    token,
+    jti,
+    issuedAt: new Date(issuedAtMs),
+    expiresAt: new Date(expiresAtMs),
+  };
+}
+
+function signToken(userId, ttlMs, options = {}) {
+  return buildSignedToken(userId, ttlMs, options).token;
 }
 
 function calculateRenewedExpiry(currentExpiry, addedDays, now = new Date()) {
@@ -59,10 +98,10 @@ function calculateRenewedExpiry(currentExpiry, addedDays, now = new Date()) {
 
 async function issueToken(userId, ttlMs) {
   const normalizedUserId = normalizeUserId(userId);
-  const token = signToken(normalizedUserId, ttlMs);
-  const tokenHash = hashToken(token);
-  const issuedAt = new Date();
-  const expiresAt = new Date(issuedAt.getTime() + ttlMs);
+  const issued = buildSignedToken(normalizedUserId, ttlMs);
+  const tokenHash = hashToken(issued.token);
+  const issuedAt = issued.issuedAt;
+  const expiresAt = issued.expiresAt;
 
   const { rows } = await db.withTransaction((client) =>
     client.query(
@@ -79,7 +118,7 @@ async function issueToken(userId, ttlMs) {
 
   publish('auth:revoked', { userId: normalizedUserId });
   return {
-    token,
+    token: issued.token,
     metadata: tokenMetadata(rows[0]),
   };
 }
@@ -101,16 +140,27 @@ async function renewToken(userId, addedDays) {
   );
   if (rows.length === 0) throw new Error('Token not found.');
 
-  const expiresAt = calculateRenewedExpiry(rows[0].expires_at, addedDays);
-  const ttlMs = expiresAt.getTime() - Date.now();
-  if (ttlMs < 1_000)
+  const renewed = calculateRenewedExpiry(rows[0].expires_at, addedDays);
+
+  // EG-002: the stored expiry carries millisecond precision from PostgreSQL
+  // while JWT `exp` is whole-second, so the raw difference used to fail the
+  // `% 1000` TTL validation and renewals rejected their own calculated TTL.
+  // Both ends are now canonicalised to whole seconds and clamped to the
+  // supported TTL range, so a valid stored session always renews.
+  const issuedAtMs = toWholeSecond(Date.now());
+  const ttlMs = Math.min(
+    Math.max(toWholeSecond(renewed.getTime()) - issuedAtMs, 0),
+    MAX_TOKEN_TTL_MS
+  );
+  if (ttlMs < MIN_TOKEN_TTL_MS)
     throw new Error(
       'Renewal duration must leave at least one second of token lifetime.'
     );
 
-  const token = signToken(normalizedUserId, ttlMs);
-  const tokenHash = hashToken(token);
-  const issuedAt = new Date();
+  const issued = buildSignedToken(normalizedUserId, ttlMs, { issuedAtMs });
+  const tokenHash = hashToken(issued.token);
+  const issuedAt = issued.issuedAt;
+  const expiresAt = issued.expiresAt;
   const result = await db.withTransaction((client) =>
     client.query(
       `UPDATE web_tokens
@@ -121,7 +171,7 @@ async function renewToken(userId, addedDays) {
     )
   );
   publish('auth:revoked', { userId: normalizedUserId });
-  return { token, metadata: tokenMetadata(result.rows[0]) };
+  return { token: issued.token, metadata: tokenMetadata(result.rows[0]) };
 }
 
 async function verifyActiveToken(token) {
@@ -187,6 +237,8 @@ function tokenMetadata(row) {
 module.exports = {
   hashToken,
   normalizeUserId,
+  buildSignedToken,
+  toWholeSecond,
   signToken,
   issueToken,
   issueTokenDays,
