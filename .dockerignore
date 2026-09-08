@@ -1,11 +1,14 @@
 node_modules
 npm-debug.log*
+**/node_modules
 
 .git
 .gitignore
+.gitattributes
 .github
 
 .env
+.env.*
 .env.example
 
 logs
@@ -17,6 +20,29 @@ log.txt
 tests
 scripts
 db
+tasks
+docs
+report
+
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# Operator credential material must never reach the build context, even if it
+# is dropped into the checkout by hand.
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials*.json
+serviceAccount*.json
+*.kubeconfig
+
+web/dist
+web/node_modules
+web/.vite
 
 README.md
 LICENSE
