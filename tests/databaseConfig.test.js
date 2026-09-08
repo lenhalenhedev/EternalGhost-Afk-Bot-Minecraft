@@ -20,6 +20,7 @@ function runDatabaseLoad(overrides) {
     'PGSSLMODE',
     'DATABASE_URL',
     'PGHOST',
+    'DB_ALLOW_LOOPBACK_PLAINTEXT',
   ]) {
     delete env[key];
   }
@@ -129,4 +130,78 @@ test('invalid TLS booleans abort startup', () => {
     result.stderr,
     /FATAL: DB_SSL_REJECT_UNAUTHORIZED must be explicitly true or false/
   );
+});
+
+// ── EG-010: loopback classification must be by IP literal, not text prefix ──
+
+test('EG-010: only parsed loopback literals count as local', () => {
+  const { isLoopbackDatabaseHost } = require('../src/config/database');
+
+  for (const host of [
+    '127.0.0.1',
+    '127.1.2.3',
+    '127.255.255.254',
+    '::1',
+    '[::1]',
+    'localhost',
+  ]) {
+    assert.equal(
+      isLoopbackDatabaseHost(host),
+      true,
+      `${host} must be loopback`
+    );
+  }
+
+  for (const host of [
+    '127.db.example.test', // remote DNS name with a loopback-looking prefix
+    '127.example.com',
+    'db.example.test',
+    '128.0.0.1',
+    '12.7.0.1',
+    '1270.0.1',
+    '::2',
+    '0:0:0:0:0:0:0:2',
+    'localhost.example.test',
+    '',
+  ]) {
+    assert.equal(isLoopbackDatabaseHost(host), false, `${host} must be remote`);
+  }
+});
+
+test('EG-010: a remote hostname beginning with "127." requires verified TLS', () => {
+  const result = runDatabaseLoad({ PGHOST: '127.db.example.test' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /FATAL: remote PostgreSQL requires verified TLS/);
+});
+
+test('EG-010: DATABASE_URL and discrete PGHOST classify identically', () => {
+  for (const overrides of [
+    { DATABASE_URL: 'postgres://user@127.db.example.test/app' },
+    { PGHOST: '127.db.example.test' },
+  ]) {
+    const result = runDatabaseLoad(overrides);
+    assert.notEqual(result.status, 0, JSON.stringify(overrides));
+    assert.match(
+      result.stderr,
+      /FATAL: remote PostgreSQL requires verified TLS/
+    );
+  }
+});
+
+test('EG-010: any loopback address in 127.0.0.0/8 may use plaintext', () => {
+  for (const host of ['127.0.0.1', '127.9.8.7']) {
+    const result = runDatabaseLoad({ PGHOST: host });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { host, ssl: null });
+  }
+});
+
+test('EG-010: DB_ALLOW_LOOPBACK_PLAINTEXT=false forces verified TLS everywhere', () => {
+  const result = runDatabaseLoad({
+    PGHOST: '127.0.0.1',
+    DB_ALLOW_LOOPBACK_PLAINTEXT: 'false',
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /FATAL: remote PostgreSQL requires verified TLS/);
 });

@@ -328,7 +328,7 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 | `DB_POOL_IDLE_TIMEOUT_MS`       |    No    | Idle connection eviction timeout.                                    |
 | `DB_POOL_CONNECTION_TIMEOUT_MS` |    No    | Connection acquisition timeout.                                      |
 
-> **Transport policy.** All non-loopback PostgreSQL instances require a CA-backed TLS connection with `rejectUnauthorized: true`. Only `localhost`, `127.0.0.0/8`, and `::1` may use plaintext for local development. `DATABASE_URL` TLS query parameters are rejected to prevent accidental downgrade.
+> **Transport policy.** All non-loopback PostgreSQL instances require a CA-backed TLS connection with `rejectUnauthorized: true`. Only parsed IP literals in `127.0.0.0/8`, `::1`, and the hostname `localhost` may use plaintext for local development — a remote DNS name that merely *starts* with `127.` is treated as remote and still requires verified TLS. Set `DB_ALLOW_LOOPBACK_PLAINTEXT=false` to force verified TLS on every connection, including loopback. `DATABASE_URL` TLS query parameters are rejected to prevent accidental downgrade.
 
 > *At least one of `DATABASE_URL` or the discrete `PG*` set must be provided.
 

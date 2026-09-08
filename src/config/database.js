@@ -14,6 +14,7 @@ const { Pool } = require('pg');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 const tls = require('tls');
 
 function optionalEnv(key, defaultValue = undefined) {
@@ -78,15 +79,41 @@ function readSslCertificate(certPath) {
   }
 }
 
+/** True for an IPv4 literal inside 127.0.0.0/8. */
+function isLoopbackIpv4(address) {
+  const octets = address.split('.').map(Number);
+  if (
+    octets.length !== 4 ||
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+  ) {
+    return false;
+  }
+  return octets[0] === 127;
+}
+
+/**
+ * Decide whether a database host may use plaintext transport.
+ *
+ * EG-010: this used to apply a textual `/^127\./` test to *any* hostname, so a
+ * remote DNS name such as `127.db.example.test` was classified as loopback and
+ * the verified-TLS requirement was silently skipped. Classification is now by
+ * parsed IP literal; every other hostname is remote and must present a CA.
+ *
+ * `localhost` stays the single documented hostname exception because it is the
+ * default local-development target (and the default `PGHOST`). Operators who
+ * want no plaintext path at all can set `DB_ALLOW_LOOPBACK_PLAINTEXT=false`.
+ */
 function isLoopbackDatabaseHost(host) {
   const normalized = String(host || '')
+    .trim()
     .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
     .toLowerCase();
-  return (
-    normalized === 'localhost' ||
-    normalized === '::1' ||
-    /^127\./.test(normalized)
-  );
+  if (!normalized) return false;
+  const family = net.isIP(normalized);
+  if (family === 4) return isLoopbackIpv4(normalized);
+  if (family === 6) return normalized === '::1';
+  return normalized === 'localhost';
 }
 
 function fatalTls(message) {
@@ -154,10 +181,23 @@ function buildSslConfig({ remote }) {
   return { ca, rejectUnauthorized: true };
 }
 
+/**
+ * Whether the resolved target may skip verified TLS. Loopback classification
+ * is IP-literal based, and `DB_ALLOW_LOOPBACK_PLAINTEXT=false` removes even
+ * that exception for operators who want TLS on every connection.
+ */
+function allowsPlaintextTransport(host) {
+  return (
+    boolEnv('DB_ALLOW_LOOPBACK_PLAINTEXT', true) && isLoopbackDatabaseHost(host)
+  );
+}
+
 /** Build the pg Pool config from environment variables. */
 function buildPoolConfig() {
   const target = parseDatabaseTarget(optionalEnv('DATABASE_URL'));
-  const ssl = buildSslConfig({ remote: !isLoopbackDatabaseHost(target.host) });
+  const ssl = buildSslConfig({
+    remote: !allowsPlaintextTransport(target.host),
+  });
   const connectionString = target.connectionString;
 
   const poolTuning = {
@@ -277,4 +317,6 @@ module.exports = {
   assertConnection,
   close,
   getPoolStats,
+  isLoopbackDatabaseHost,
+  allowsPlaintextTransport,
 };
