@@ -20,6 +20,33 @@ function intEnv(key, fallback, bounds = {}) {
   return parsed.valid ? parsed.value : fallback;
 }
 
+/**
+ * Validate an origin-shaped environment value (EG-011).
+ *
+ * Only absolute http(s) origins without credentials, path, query or fragment
+ * are accepted; the value is normalised through the WHATWG URL parser so the
+ * caller can compare it byte-for-byte with `URL#origin`.
+ */
+function originEnv(key) {
+  const value = optionalEnv(key);
+  if (!value) return '';
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(
+      `${key} must be an absolute http(s) URL such as https://dashboard.example.com.`
+    );
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    throw new Error(`${key} must use http or https.`);
+  if (url.username || url.password)
+    throw new Error(`${key} must not contain credentials.`);
+  if (url.pathname !== '/' || url.search || url.hash)
+    throw new Error(`${key} must not contain a path, query or fragment.`);
+  return url.origin;
+}
+
 function boolEnv(key, fallback = false) {
   const raw = process.env[key];
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -131,6 +158,9 @@ try {
     web: {
       port: intEnv('WEB_PORT', 8080, { min: 1, max: 65535 }),
       https: boolEnv('WEB_HTTPS', false),
+      // EG-011: explicit public origin used for the exact same-origin CSRF
+      // comparison. Empty means "derive it from the request Host + WEB_HTTPS".
+      publicOrigin: originEnv('WEB_PUBLIC_ORIGIN'),
       jwtSecret: webJwtSecret || encryptionKey,
       jwtSecretUsesFallback: !webJwtSecret,
       trustProxy: webTrustProxy,

@@ -10,6 +10,9 @@
  * ACT=ratelimit   -> sends 6 requests to /healthz, prints status counts
  * ACT=csrforigin  -> posts to /api/auth/logout under same/cross-origin and
  *                    Sec-Fetch-Site conditions, prints observed status codes
+ * ACT=csrforiginstrict -> EG-011: posts to /api/auth/logout under origins that
+ *                    share the host but differ in port or scheme, and against a
+ *                    configured WEB_PUBLIC_ORIGIN, prints observed status codes
  */
 
 async function start() {
@@ -66,6 +69,42 @@ async function main() {
         headers: { 'Sec-Fetch-Site': 'cross-site' },
       });
       statuses.crossSiteFetchSite = crossSiteFetch.status;
+
+      console.log(JSON.stringify(statuses));
+      return;
+    }
+
+    if (act === 'csrforiginstrict') {
+      const statuses = {};
+      const url = new URL(base);
+      const post = (headers) =>
+        fetch(`${base}/api/auth/logout`, { method: 'POST', headers });
+
+      const otherPort = await post({
+        Origin: `${url.protocol}//${url.hostname}:1`,
+      });
+      statuses.sameHostDifferentPort = otherPort.status;
+
+      const otherScheme = url.protocol === 'https:' ? 'http:' : 'https:';
+      const otherSchemeRequest = await post({
+        Origin: `${otherScheme}//${url.host}`,
+      });
+      statuses.sameHostDifferentScheme = otherSchemeRequest.status;
+
+      const same = await post({ Origin: base });
+      statuses.requestOrigin = same.status;
+
+      const noOrigin = await post({});
+      statuses.noOrigin = noOrigin.status;
+
+      const malformed = await post({ Origin: 'not a url' });
+      statuses.malformedOrigin = malformed.status;
+
+      const configured = process.env.WEB_PUBLIC_ORIGIN;
+      if (configured) {
+        const canonical = await post({ Origin: configured });
+        statuses.configuredPublicOrigin = canonical.status;
+      }
 
       console.log(JSON.stringify(statuses));
       return;

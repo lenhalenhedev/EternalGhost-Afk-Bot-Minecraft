@@ -29,6 +29,22 @@ Authenticated state-changing endpoints use a same-origin guard on top of
 (checked via the `Origin` and `Sec-Fetch-Site` headers) are rejected with HTTP
 403. Non-browser server-side clients (no `Origin`) remain supported.
 
+The `Origin` fallback compares the **complete** origin — scheme, host and port —
+against the deployment's own origin. Cookies are host-scoped rather than
+port-scoped, so comparing hostnames alone would let a different origin on the
+same host (a second tenant, or a compromised application on another port of the
+same IP or hostname) satisfy the guard. The expected origin is taken from
+`WEB_PUBLIC_ORIGIN` when set, and otherwise derived from the request `Host`
+header plus the scheme implied by `WEB_HTTPS`, which keeps the comparison
+correct behind a TLS-terminating reverse proxy. When no expected origin can be
+determined the request is rejected rather than allowed.
+
+Set `WEB_PUBLIC_ORIGIN` to the exact public origin of the dashboard (for
+example `https://dashboard.example.com`, no path) whenever users reach it under
+a name that differs from the `Host` header the Node process observes. A value
+that is not an absolute http(s) origin without path, query, fragment or
+credentials fails startup rather than silently weakening the check.
+
 ### Trusting a reverse proxy and client-IP rate limiting
 
 Rate limiters key on `req.ip`. When the origin sits behind Cloudflare or another

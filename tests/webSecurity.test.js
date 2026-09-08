@@ -62,3 +62,78 @@ test('EG-004: cross-origin state-changing requests are rejected', () => {
   assert.equal(result.crossSiteFetchSite, 403);
   assert.equal(result.sameOrigin, 204);
 });
+
+test('EG-011: an alternate origin on the same host is rejected', () => {
+  // The previous fallback compared only the hostname and stripped the port, so
+  // a different HTTPS origin on the same host could pass the CSRF guard while
+  // still being cross-origin.
+  const result = probe({ ACT: 'csrforiginstrict', ...baseEnv });
+  assert.equal(result.sameHostDifferentPort, 403);
+  assert.equal(result.sameHostDifferentScheme, 403);
+  assert.equal(result.malformedOrigin, 403);
+  assert.equal(
+    result.requestOrigin,
+    204,
+    'the real request origin stays allowed'
+  );
+  assert.equal(
+    result.noOrigin,
+    204,
+    'non-browser clients without Origin still pass'
+  );
+});
+
+test('EG-011: WEB_PUBLIC_ORIGIN pins the exact accepted origin', () => {
+  const result = probe({
+    ACT: 'csrforiginstrict',
+    WEB_PUBLIC_ORIGIN: 'https://dashboard.example.test',
+    ...baseEnv,
+  });
+  assert.equal(result.configuredPublicOrigin, 204);
+  assert.equal(
+    result.requestOrigin,
+    403,
+    'once a canonical origin is configured the inferred request origin must not be trusted'
+  );
+  assert.equal(result.sameHostDifferentPort, 403);
+});
+
+test('EG-011: WEB_HTTPS=true deploys still accept their own https origin', () => {
+  // Behind a TLS-terminating proxy the request arrives over http but the public
+  // origin is https; the guard must derive the expected origin from WEB_HTTPS.
+  const result = probe({
+    ACT: 'csrforiginstrict',
+    WEB_HTTPS: 'true',
+    ...baseEnv,
+  });
+  assert.equal(
+    result.requestOrigin,
+    403,
+    'a plain http origin is no longer accepted'
+  );
+  assert.equal(
+    result.sameHostDifferentScheme,
+    204,
+    'the https origin is accepted'
+  );
+  assert.equal(result.noOrigin, 204);
+});
+
+test('EG-011: a malformed WEB_PUBLIC_ORIGIN is refused at startup', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['-e', "require('./src/config'); console.log('loaded');"],
+    {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        DOTENV_CONFIG_QUIET: 'true',
+        WEB_PUBLIC_ORIGIN: 'dashboard.example.test/path',
+        ...baseEnv,
+      },
+      encoding: 'utf8',
+    }
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /WEB_PUBLIC_ORIGIN/);
+});
