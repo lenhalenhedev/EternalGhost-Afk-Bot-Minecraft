@@ -369,7 +369,7 @@ All commands are ephemeral, administrator-gated, principal-scoped, and respond w
 
 > **Chat safety.** The `/chat` command enforces a 200-character limit, a per-user cooldown, control-character rejection, and an in-game command whitelist (`/register`, `/login`, `/spawn`, `/home`, `/back`). Non-whitelisted slash commands are refused.
 
-> **Egress safety.** Each Minecraft destination is syntax-validated at creation and resolved again immediately before connecting. The connector denies loopback, private, link-local, metadata, multicast, unspecified, reserved, and mixed DNS results by default, then pins the connection to one verified address to prevent DNS rebinding. A private server can be approved only by listing its exact IP in `MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST`.
+> **Egress safety.** Each Minecraft destination is syntax-validated at creation and resolved again immediately before connecting. The connector denies loopback, private, link-local, metadata, multicast, unspecified, reserved, and mixed DNS results by default, then pins the connection to one verified address to prevent DNS rebinding. IPv6 is default-deny: only the global unicast range `2000::/3` is eligible, and every special-use block — deprecated site-local (`fec0::/10`), IPv4-compatible (`::/96`), NAT64/SIIT translated (`64:ff9b::/96`, `64:ff9b:1::/48`), Teredo, 6to4, documentation, benchmarking, ORCHID, 6bone, ULA, link-local and multicast — is rejected by prefix. A private server can be approved only by listing its exact IP in `MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST`.
 
 ---
 

@@ -150,24 +150,105 @@ function parseIpv6Groups(address) {
   return groups.map((group) => Number.parseInt(group, 16));
 }
 
-function isPublicIpv6(address) {
-  const groups = parseIpv6Groups(address);
-  if (!groups) return false;
-  const allZero = groups.every((group) => group === 0);
-  const loopback =
-    groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1;
-  const mappedIpv4 =
-    groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
-  if (allZero || loopback) return false;
-  if (mappedIpv4) {
-    return isPublicIpv4(
-      `${groups[6] >> 8}.${groups[6] & 0xff}.${groups[7] >> 8}.${groups[7] & 0xff}`
-    );
+/**
+ * IPv6 special-use / non-globally-routable prefixes (EG-003).
+ *
+ * The previous classifier denied only `::`, `::1`, ULA, link-local and
+ * multicast. Every other special-use form — deprecated site-local,
+ * IPv4-compatible, NAT64/SIIT translated, documentation, benchmarking, Teredo,
+ * 6to4, retired 6bone — fell through to `public = true`, so an operator-
+ * supplied literal that encodes a local or special route was accepted by
+ * `assertPublicDestination` and handed straight to Mineflayer.
+ *
+ * Entries are `[cidr, reason]`; `::ffff:0:0/96` is deliberately absent because
+ * IPv4-mapped addresses are classified through the IPv4 policy below.
+ */
+const IPV6_DENIED_PREFIXES = Object.freeze([
+  ['::/128', 'unspecified address (RFC 4291)'],
+  ['::1/128', 'loopback (RFC 4291)'],
+  ['::/96', 'deprecated IPv4-compatible (RFC 4291)'],
+  ['64:ff9b::/96', 'IPv4/IPv6 translation (RFC 6052)'],
+  ['64:ff9b:1::/48', 'local-use IPv4/IPv6 translation (RFC 8215)'],
+  ['100::/64', 'discard-only block (RFC 6666)'],
+  ['2001::/32', 'Teredo (RFC 4380)'],
+  ['2001:1::1/128', 'Port Control Protocol anycast (RFC 7723)'],
+  ['2001:1::2/128', 'TRACEROUTE anycast (RFC 7526)'],
+  ['2001:1::3/128', 'DNS-SD anycast (RFC 9453)'],
+  ['2001:2::/48', 'benchmarking (RFC 5180)'],
+  ['2001:3::/32', 'AMT (RFC 7450)'],
+  ['2001:4:112::/48', 'AS112-v6 (RFC 7535)'],
+  ['2001:10::/28', 'ORCHID (RFC 4843)'],
+  ['2001:20::/28', 'ORCHIDv2 (RFC 7343)'],
+  ['2001:db8::/32', 'documentation (RFC 3849)'],
+  ['2002::/16', '6to4 (RFC 3056, deprecated)'],
+  ['3ffe::/16', '6bone (RFC 3701, retired)'],
+  ['5f00::/8', '6bone (RFC 3701, retired)'],
+  ['2620:4f:8000::/48', 'documentation/test-net (RFC 9637)'],
+  ['fc00::/7', 'unique local address (RFC 4193)'],
+  ['fe80::/10', 'link-local unicast (RFC 4291)'],
+  ['fec0::/10', 'site-local (RFC 3879, deprecated)'],
+  ['ff00::/8', 'multicast (RFC 4291)'],
+]);
+
+/** Compare the leading `prefixBits` of an IPv6 address against a prefix. */
+function ipv6PrefixMatches(groups, prefixGroups, prefixBits) {
+  const fullGroups = Math.floor(prefixBits / 16);
+  for (let index = 0; index < fullGroups; index += 1) {
+    if (groups[index] !== prefixGroups[index]) return false;
   }
-  if ((groups[0] & 0xfe00) === 0xfc00) return false; // Unique local (fc00::/7)
-  if ((groups[0] & 0xffc0) === 0xfe80) return false; // Link-local (fe80::/10)
-  if ((groups[0] & 0xff00) === 0xff00) return false; // Multicast (ff00::/8)
-  return true;
+  const remainder = prefixBits % 16;
+  if (remainder === 0) return true;
+  const mask = (0xffff << (16 - remainder)) & 0xffff;
+  return (groups[fullGroups] & mask) === (prefixGroups[fullGroups] & mask);
+}
+
+// Parsed once at load time; a malformed entry is a programming error and must
+// fail loudly rather than silently weakening the egress policy.
+const IPV6_DENYLIST = IPV6_DENIED_PREFIXES.map(([cidr, reason]) => {
+  const [address, bits] = cidr.split('/');
+  const groups = parseIpv6Groups(address);
+  const prefixBits = Number(bits);
+  if (!groups || !Number.isInteger(prefixBits) || prefixBits < 1) {
+    throw new Error(`Invalid egress denylist entry: ${cidr}`);
+  }
+  return { groups, prefixBits, reason, cidr };
+});
+
+function isIpv4Mapped(groups) {
+  return (
+    groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff
+  );
+}
+
+function groupsToDottedQuad(groups) {
+  return `${groups[6] >> 8}.${groups[6] & 0xff}.${groups[7] >> 8}.${groups[7] & 0xff}`;
+}
+
+/** Human-readable denial reason for an IPv6 address, or null when public. */
+function ipv6DenialReason(address) {
+  const groups = parseIpv6Groups(address);
+  if (!groups) return 'not a valid IPv6 address';
+  if (isIpv4Mapped(groups)) {
+    return isPublicIpv4(groupsToDottedQuad(groups))
+      ? null
+      : 'embedded IPv4 address is not public';
+  }
+  for (const entry of IPV6_DENYLIST) {
+    if (ipv6PrefixMatches(groups, entry.groups, entry.prefixBits)) {
+      return `IPv6 special-use range ${entry.cidr} (${entry.reason})`;
+    }
+  }
+  // Default-deny anything that is not RFC 4291 global unicast (2000::/3):
+  // unassigned space must never count as "public" just because a denylist did
+  // not name it.
+  if ((groups[0] & 0xe000) !== 0x2000) {
+    return 'outside the global unicast range 2000::/3';
+  }
+  return null;
+}
+
+function isPublicIpv6(address) {
+  return ipv6DenialReason(address) === null;
 }
 
 function isPublicIpAddress(address) {
@@ -348,6 +429,9 @@ module.exports = {
   validateUsername,
   validateHost,
   isPublicIpAddress,
+  isPublicIpv6,
+  ipv6DenialReason,
+  IPV6_DENIED_PREFIXES,
   assertPublicDestination,
   validatePassword,
   validateBotConfig,
