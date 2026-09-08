@@ -145,6 +145,18 @@ try {
     storage: {
       logDir: optionalEnv('LOG_DIR', './logs'),
       logLevel: optionalEnv('LOG_LEVEL', 'info'),
+      // EG-004: bound durable log volume. Total on-disk usage per file is
+      // logMaxFileBytes * (logMaxFiles + 1).
+      logMaxFileBytes: intEnv('LOG_MAX_FILE_BYTES', 10 * 1024 * 1024, {
+        min: 4_096,
+        max: 1_073_741_824,
+      }),
+      logMaxFiles: intEnv('LOG_MAX_FILES', 5, { min: 1, max: 100 }),
+      // Longest untrusted message retained per log record.
+      logMessageMaxChars: intEnv('LOG_MESSAGE_MAX_CHARS', 2_000, {
+        min: 128,
+        max: 65_536,
+      }),
     },
     database: {
       url: optionalEnv('DATABASE_URL'),
@@ -171,6 +183,11 @@ try {
       queueSize: intEnv('BOT_QUEUE_SIZE', 100, { min: 1 }),
       queueTimeout: intEnv('BOT_QUEUE_TIMEOUT', 10_000, { min: 1 }),
       logSummaryIntervalMin: intEnv('LOG_SUMMARY_INTERVAL_MIN', 15, { min: 1 }),
+      // EG-004: hard cap on frames buffered per slow/stalled SSE client.
+      sseMaxBufferedEvents: intEnv('SSE_MAX_BUFFERED_EVENTS', 200, {
+        min: 1,
+        max: 10_000,
+      }),
     },
   };
 } catch (err) {

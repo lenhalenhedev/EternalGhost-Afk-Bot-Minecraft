@@ -338,6 +338,10 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 | -------------------------- | -------- | ------------------------------------------------------- |
 | `LOG_DIR`                  | `./logs` | Directory for rotating log files.                       |
 | `LOG_LEVEL`                | `info`   | Winston log level.                                      |
+| `LOG_MAX_FILE_BYTES`       | `10485760` | Rotate each JSONL file at this size (min 4096).       |
+| `LOG_MAX_FILES`            | `5`      | Rotated generations retained per JSONL file (1–100).    |
+| `LOG_MESSAGE_MAX_CHARS`    | `2000`   | Longest retained length of one log message.             |
+| `SSE_MAX_BUFFERED_EVENTS`  | `200`    | SSE frames buffered per slow client before log frames are dropped. |
 | `MAX_BOTS`                 | `50`     | Maximum concurrent bot instances.                       |
 | `BOT_QUEUE_SIZE`           | `100`    | Per-bot task-queue depth.                               |
 | `BOT_QUEUE_TIMEOUT`        | `10000`  | Per-task timeout in milliseconds.                       |
@@ -437,7 +441,7 @@ npm run format
 - **Graceful shutdown.** `BotManager.shutdown()` stops the cron summary task, stops every bot, and flushes persistence, ensuring no orphaned timers or in-flight writes on process exit.
 - **Auto-restart.** Bots flagged as running are automatically restarted on boot, restoring the fleet to its last known operational state.
 - **Offline-mode servers.** Bots connect in `offline` authentication mode; AuthMe login is handled in-world via the authentication flow when a prompt is detected.
-- **Observability.** Rotating file logs, an in-memory ring buffer per bot, alert cooldowns, and periodic Discord summaries provide layered visibility without unbounded memory growth.
+- **Observability.** Rotating file logs, an in-memory ring buffer per bot, alert cooldowns, and periodic Discord summaries provide layered visibility without unbounded memory growth. Every log message is ANSI-stripped, secret-redacted with `redactForLog` and truncated to `LOG_MESSAGE_MAX_CHARS` before it reaches stdout, the JSONL sinks, the ring buffer, or an SSE stream, so a hostile Minecraft server cannot smuggle a credential echo or an unbounded payload into durable logs. Each JSONL file rotates at `LOG_MAX_FILE_BYTES` and retains `LOG_MAX_FILES` generations, and every SSE connection buffers at most `SSE_MAX_BUFFERED_EVENTS` frames — dropping the oldest log frames first — so a stalled dashboard client cannot make the process grow without bound.
 
 ---
 

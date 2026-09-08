@@ -5,8 +5,9 @@ const fs = require('node:fs');
 const { EventEmitter } = require('node:events');
 const pino = require('pino');
 const config = require('../config');
-const { sanitizeForLog } = require('../utils/security');
+const { redactForLog } = require('../utils/security');
 const { LogBuffers } = require('./logBuffer');
+const { RotatingFileStream } = require('./logFile');
 
 const LOG_DIR = path.resolve(config.storage.logDir);
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
@@ -19,8 +20,17 @@ const stripAnsi = (value) =>
     ''
   );
 
+/**
+ * EG-004: every message reaching a durable or broadcast sink is ANSI-stripped,
+ * secret-redacted and length-bounded. Previously only control characters were
+ * removed, so raw attacker-controlled server text (which may echo a credential
+ * the bot just sent) was appended to both JSONL files and streamed to every
+ * owner SSE client without limit.
+ */
 function safeText(value) {
-  return stripAnsi(sanitizeForLog(value));
+  return stripAnsi(
+    redactForLog(value, { maxChars: config.storage.logMessageMaxChars })
+  );
 }
 
 function normalizeError(error) {
@@ -45,12 +55,17 @@ function normalizeFields(fields = {}) {
   return normalized;
 }
 
-const combinedStream = fs.createWriteStream(
+// EG-004: bounded, retained JSONL sinks instead of append-forever files.
+const combinedStream = new RotatingFileStream(
   path.join(LOG_DIR, 'combined.jsonl'),
-  { flags: 'a' }
+  {
+    maxBytes: config.storage.logMaxFileBytes,
+    maxFiles: config.storage.logMaxFiles,
+  }
 );
-const errorStream = fs.createWriteStream(path.join(LOG_DIR, 'error.jsonl'), {
-  flags: 'a',
+const errorStream = new RotatingFileStream(path.join(LOG_DIR, 'error.jsonl'), {
+  maxBytes: config.storage.logMaxFileBytes,
+  maxFiles: config.storage.logMaxFiles,
 });
 const destination = pino.multistream([
   { stream: process.stdout },
