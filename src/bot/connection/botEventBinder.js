@@ -94,6 +94,10 @@ function bindBotEvents(instance, bot) {
       const msg =
         typeof reason === 'object' ? JSON.stringify(reason) : String(reason);
       botLog(instance.id, 'warn', `Kicked: ${msg}`);
+      // EG-007: mineflayer emits `kicked` for the disconnect packet and then
+      // `end` for the same underlying socket. Without a per-connection guard
+      // one physical disconnect charged the reconnect budget twice.
+      if (!claimTerminalDisconnect(instance, 'kicked')) return;
       instance._reconnect.handleDisconnect(`Kicked: ${msg}`);
     })
   );
@@ -105,6 +109,7 @@ function bindBotEvents(instance, bot) {
       (reason) => {
         if (instance.state === BOT_STATES.OFFLINE) return;
         botLog(instance.id, 'warn', `Connection ended: ${reason}`);
+        if (!claimTerminalDisconnect(instance, 'end')) return;
         instance._reconnect.handleDisconnect(String(reason));
       },
       { terminateOnError: false }
@@ -116,6 +121,30 @@ function bindBotEvents(instance, bot) {
   } catch (err) {
     botLog(instance.id, 'warn', `Pathfinder load failed: ${err.message}`);
   }
+}
+
+/**
+ * Claim the terminal disconnect for the current connection (EG-007).
+ *
+ * Keyed to the instance's connection generation so the first `kicked`/`end`
+ * for a connection drives the lifecycle exactly once and later terminal events
+ * for the same connection are log-only. A new `_connect()` bumps the
+ * generation, which resets the guard for the next connection.
+ *
+ * @returns {boolean} true when the caller may run the disconnect lifecycle
+ */
+function claimTerminalDisconnect(instance, kind) {
+  const generation = instance._connectGeneration;
+  if (instance._terminalGeneration === generation) {
+    botLog(
+      instance.id,
+      'debug',
+      `Ignoring duplicate terminal event "${kind}" for connection ${generation}.`
+    );
+    return false;
+  }
+  instance._terminalGeneration = generation;
+  return true;
 }
 
 function makeGuard(instance, bot) {
@@ -270,4 +299,4 @@ function onDeath(instance, bot) {
   bot.once('spawn', onRespawn);
 }
 
-module.exports = { bindBotEvents };
+module.exports = { bindBotEvents, claimTerminalDisconnect };

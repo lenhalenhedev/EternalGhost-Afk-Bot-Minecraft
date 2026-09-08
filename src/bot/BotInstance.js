@@ -52,6 +52,9 @@ class BotInstance extends EventEmitter {
     this._respawnHandler = null;
     this._abort = null;
     this._connectGeneration = 0;
+    // EG-007: connection generation whose terminal disconnect has already been
+    // accounted for. -1 so generation 1 can never be pre-consumed.
+    this._terminalGeneration = -1;
     this._destroyed = false;
   }
 
