@@ -742,12 +742,20 @@
     }
   ],
   "pull_request": {
+    "number": 9,
+    "url": "https://github.com/lenhalenhedev/EternalGhost-Afk-Bot-Minecraft/pull/9",
     "requested_base": "main",
+    "base_branch": "main",
     "source_branch": "arena/01a0811c-eternalghost-afk-bot-minecraft",
-    "status": "not_created",
-    "reason": "GitHub authentication is unavailable in this environment: `gh auth status` reports that the github.com token in GH_TOKEN is no longer valid, `gh api user` returns HTTP 401 Bad credentials, `git push` fails with 'could not read Username for https://github.com: terminal prompts disabled', and no SSH key or known_hosts entry exists. The branch could not be pushed and the pull request could not be opened. All 13 commits are present on the local branch.",
+    "title": "Security remediation for audit eternalghost-afk-bot-2026-09-07-post-4d6796f (13 findings)",
+    "status": "open",
+    "state": "OPEN",
+    "is_draft": false,
+    "mergeable": "MERGEABLE",
+    "merged_at": null,
+    "commits_in_pr": 14,
     "merge_performed": false,
-    "handoff": "Once the GitHub connection is restored: git push -u origin arena/01a0811c-eternalghost-afk-bot-minecraft && gh pr create --base main --head arena/01a0811c-eternalghost-afk-bot-minecraft --title 'Security remediation for audit eternalghost-afk-bot-2026-09-07-post-4d6796f' --body-file docs/security-fix-report-eternalghost-afk-bot-2026-09-07-post-4d6796f.md"
+    "notes": "The branch push and PR creation initially failed because GitHub authentication was unavailable in the remediation environment (gh auth status reported the GH_TOKEN was no longer valid and git push could not read credentials). Authentication was restored, the branch was pushed and the pull request was opened. It was deliberately left unmerged for human review. Note that `gh api user` returns 403 for this GitHub App installation token; that is expected and is not an authentication failure."
   },
   "untouched_files": [
     {
@@ -775,5 +783,5 @@
       "reason": "Out of scope; EG-012 addressed the dashboard only at the image-packaging boundary."
     }
   ],
-  "notes": "All 13 findings were independently re-validated against the audit commit; none was skipped and none was rejected as a false positive. Final statuses: fixed=11, verification_limited=2 (EG-005 real-PostgreSQL advisory-lock path, EG-012 Docker image build). No test or assertion was deleted, no test was skipped, no eslint-disable or @ts-ignore was added, no security control was weakened, and no secret, token or DATABASE_URL value appears in any commit, log or artifact. See docs/security-fix-report-eternalghost-afk-bot-2026-09-07-post-4d6796f.md for full evidence."
+  "notes": "All 13 findings were independently re-validated against the audit commit; none was skipped and none was rejected as a false positive. Final statuses: fixed=11, verification_limited=2 (EG-005 real-PostgreSQL advisory-lock path, EG-012 Docker image build). No test or assertion was deleted, no test was skipped, no eslint-disable or @ts-ignore was added, no security control was weakened, and no secret, token or DATABASE_URL value appears in any commit, log or artifact. The pull request is #9 (https://github.com/lenhalenhedev/EternalGhost-Afk-Bot-Minecraft/pull/9), open against main and deliberately not merged. See docs/security-fix-report-eternalghost-afk-bot-2026-09-07-post-4d6796f.md for full evidence."
 }

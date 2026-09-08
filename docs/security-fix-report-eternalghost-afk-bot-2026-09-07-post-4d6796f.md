@@ -11,7 +11,7 @@
 | Base commit (branch point) | `8d037fb8fa0e1a204cfc8e053b7970e3d1dc6c73` |
 | Fix branch | `arena/01a0811c-eternalghost-afk-bot-minecraft` |
 | Last remediation commit | `7e3212deee2420bb3ab434e10f3da60de7847476` (the artifact commit follows it) |
-| Pull request | **Not created** — GitHub authentication unavailable (see §10) |
+| Pull request | [#9](https://github.com/lenhalenhedev/EternalGhost-Afk-Bot-Minecraft/pull/9) — **open** against `main`, 14 commits, `MERGEABLE` |
 | Merge performed | No |
 | Report generated | 2026-09-08T14:12:04Z |
 | Findings in scope | 13 (all re-validated; none skipped) |
@@ -681,26 +681,36 @@ docker run --rm eternalghost-audit sh -c 'ls -a /app'   # no report/ docs/ tasks
 
 | Field | Value |
 | --- | --- |
+| Pull request | [#9](https://github.com/lenhalenhedev/EternalGhost-Afk-Bot-Minecraft/pull/9) |
+| State | `OPEN`, not a draft, `mergeable: MERGEABLE` |
 | Source branch | `arena/01a0811c-eternalghost-afk-bot-minecraft` |
 | Base branch | `main` |
-| Commits | 13 (`d26ce00` … `7e3212d`) |
-| PR status | **Not created** |
+| Commits in PR | 14 (`d26ce00` … `ef22dd4`) |
 | Merge performed | **No** |
 
-**Why the PR was not opened.** GitHub authentication is unavailable in this environment: `gh auth status` reports that the github.com token in GH_TOKEN is no longer valid, `gh api user` returns HTTP 401 Bad credentials, `git push` fails with 'could not read Username for https://github.com: terminal prompts disabled', and no SSH key or known_hosts entry exists. The branch could not be pushed and the pull request could not be opened. All 13 commits are present on the local branch.
+**How this happened.** The branch push and PR creation initially failed because GitHub authentication
+was unavailable in the remediation environment: `gh auth status` reported that the `GH_TOKEN` was no
+longer valid, `gh api user` returned HTTP 401, and `git push` failed with *"could not read Username for
+'https://github.com': terminal prompts disabled"*. Authentication was then restored, the branch was
+pushed (`git push -u origin arena/01a0811c-eternalghost-afk-bot-minecraft`, new remote branch created)
+and the pull request was opened against `main`.
 
-**To complete the handoff** once the GitHub connection is restored:
+Note for future runs: `gh api user` returns **HTTP 403 "Resource not accessible by integration"** for this
+GitHub App installation token. That is expected for an app token and is *not* an authentication failure
+— `gh auth status` and `gh pr create` both work.
 
-```bash
-git push -u origin arena/01a0811c-eternalghost-afk-bot-minecraft
-gh pr create \
-  --base main \
-  --head arena/01a0811c-eternalghost-afk-bot-minecraft \
-  --title 'Security remediation for audit eternalghost-afk-bot-2026-09-07-post-4d6796f' \
-  --body-file docs/security-fix-report-eternalghost-afk-bot-2026-09-07-post-4d6796f.md
-```
+**Review before merging.** This PR was deliberately left unmerged. Recommended gates:
 
-Do not merge without a review on the required Node engine and, ideally, a Docker build.
+1. Re-run `npm test` and `npm run lint` on Node `>=24.0.0` (this remediation was verified on Node 22;
+   see §2).
+2. `docker build .` and inspect `/app` to confirm `report/`, `docs/`, `tasks/`, the `Dockerfile` and any
+   host-side `web/dist` are absent (closes the EG-012 verification gap).
+3. Run `tests/botQuotaRace.test.js` against a real PostgreSQL instance, ideally with two Node processes
+   creating bots concurrently (closes the EG-005 verification gap).
+4. Set `WEB_PUBLIC_ORIGIN` for any deployment reached through a hostname that differs from the `Host`
+   header the Node process observes — the EG-011 guard fails closed, so omitting it rejects requests.
+5. Walk the pre-publication checklist added to `docs/cloudflare-reverse-proxy.md` before publishing a
+   public hostname.
 
 ---
 
