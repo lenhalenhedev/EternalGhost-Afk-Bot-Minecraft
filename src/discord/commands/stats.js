@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildStatsEmbed } = require('../embeds');
 
@@ -12,7 +16,9 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction, principal) {
-    await interaction.deferReply();
+    // EG-008: process/fleet telemetry plus a per-bot endpoint table must stay
+    // caller-only rather than being readable by every channel member.
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const stats = BotManager.getStats(principal);
     const bots = BotManager.listAuthorizedBots(principal);

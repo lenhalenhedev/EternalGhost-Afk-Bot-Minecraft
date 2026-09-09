@@ -100,6 +100,37 @@ function redactDiagnostic(value) {
     .join('');
 }
 
+/** Hard cap on the text retained from a single untrusted log message (EG-004). */
+const MAX_LOG_MESSAGE_CHARS = 2_000;
+/**
+ * Input is truncated to this many characters *before* the redaction regexes
+ * run, so a hostile server cannot make a single log line expensive to process.
+ * It is deliberately larger than the retained length so a secret straddling
+ * the retention boundary is still matched and redacted.
+ */
+const LOG_REDACTION_SCAN_CHARS = 8_000;
+
+/**
+ * Prepare untrusted runtime text for a durable or broadcast log sink (EG-004).
+ *
+ * `sanitizeForLog` alone only collapses control characters, which left raw
+ * attacker-controlled server messages — potentially echoing a credential the
+ * bot just sent, or an arbitrarily long payload — in stdout, both JSONL files,
+ * the per-bot ring buffer and every owner SSE stream. This applies the same
+ * redaction used at the Discord trust boundary and bounds the retained length.
+ */
+function redactForLog(value, { maxChars = MAX_LOG_MESSAGE_CHARS } = {}) {
+  const collapsed = sanitizeForLog(value);
+  const scanned =
+    collapsed.length > LOG_REDACTION_SCAN_CHARS
+      ? collapsed.slice(0, LOG_REDACTION_SCAN_CHARS)
+      : collapsed;
+  const redacted = redactDiagnostic(scanned);
+  if (redacted.length <= maxChars) return redacted;
+  const removed = redacted.length - maxChars;
+  return `${redacted.slice(0, maxChars)}…[truncated ${removed} chars]`;
+}
+
 function strictInt(value, opts = {}) {
   const { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = opts;
   let n;
@@ -118,6 +149,9 @@ module.exports = {
   assertNoPollutingKeys,
   sanitizeForLog,
   redactDiagnostic,
+  redactForLog,
   strictInt,
   FORBIDDEN_KEYS,
+  MAX_LOG_MESSAGE_CHARS,
+  LOG_REDACTION_SCAN_CHARS,
 };

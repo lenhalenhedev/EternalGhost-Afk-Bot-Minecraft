@@ -24,12 +24,12 @@ WEB_HTTPS=true
 
 With `WEB_HTTPS=true`, the server enables HTTPS-oriented browser policies and marks the session cookie `Secure`. The Node listener remains HTTP on `WEB_PORT`; Cloudflare must be configured to accept HTTPS publicly and proxy to that origin. Do not set this flag merely because the origin is behind a proxy: set it when the public URL users open is HTTPS.
 
-| Public URL                                                         | Node origin                           | `WEB_HTTPS` | Cloudflare redirect                        |
-| ------------------------------------------------------------------ | ------------------------------------- | ----------: | ------------------------------------------ |
-| `http://host:15029`                                                | HTTP `:15029`                         |     `false` | Off                                        |
-| `https://dashboard.example.com`                                    | HTTP `:15029`                         |      `true` | On at Cloudflare                           |
-| `http://dashboard.example.com` and `https://dashboard.example.com` | HTTP `:15029`                         |     `false` | Off, only if both are intentionally public |
-| `https://dashboard.example.com`                                    | HTTPS origin with a valid certificate |      `true` | On at Cloudflare                           |
+| Public URL                                                         | Node origin                           | `WEB_HTTPS` | Cloudflare SSL mode / redirect             | Intended for production?                                    |
+| ------------------------------------------------------------------ | ------------------------------------- | ----------: | ------------------------------------------ | ----------------------------------------------------------- |
+| `http://host:15029`                                                | HTTP `:15029`                         |     `false` | Off                                        | No — local development or an isolated private network only  |
+| `https://dashboard.example.com`                                    | HTTP `:15029`                         |      `true` | Flexible — origin hop is plaintext         | No — emergency exception only (see below)                   |
+| `http://dashboard.example.com` and `https://dashboard.example.com` | HTTP `:15029`                         |     `false` | Off, both public                           | No — session cookie is not `Secure`                         |
+| `https://dashboard.example.com`                                    | HTTPS origin with a valid certificate |      `true` | Full (strict), Always Use HTTPS on         | **Yes — the only supported public configuration**            |
 
 ## Important port requirement
 
@@ -49,21 +49,71 @@ Node dashboard http://container-or-origin:15029
 
 Expose the public hostname through a Cloudflare-supported edge port, normally `443`, and configure the hosting platform or a local reverse proxy to forward that request to the container's `WEB_PORT=15029`. If the platform only provides `http://host:15029` and cannot map a supported public port, the choices are to keep the hostname DNS-only and use HTTP, change the origin exposure to a supported Cloudflare port, or use Cloudflare Spectrum. Cloudflare documents Spectrum as the product for additional ports, with all TCP/UDP ports available only on Enterprise [2].
 
-## Recommended Cloudflare setup when no origin certificate exists
+## The only recommended public deployment path: Full (strict)
 
-The short-term setup is:
+This dashboard carries JWT-backed session cookies, bot credentials in transit,
+and privileged bot-control requests. **Full (strict) with a validated origin
+certificate is the only supported configuration for a public deployment.**
+`WEB_HTTPS` never creates a TLS listener in Node — it only changes browser
+headers and cookie flags — so the application cannot compensate for a plaintext
+origin hop.
 
-1. Create an `A`, `AAAA`, or `CNAME` record for `dashboard.example.com` and set it to **Proxied** (orange cloud) only when the public request will arrive on a supported HTTP/HTTPS port. Cloudflare's proxy handles HTTP and HTTPS traffic for proxied web records [3].
-2. In **SSL/TLS → Overview**, choose **Flexible** only when the origin cannot support TLS. Flexible encrypts the visitor-to-Cloudflare connection while Cloudflare-to-origin traffic remains HTTP; Cloudflare explicitly recommends moving to Full or Full (strict) when possible [4].
-3. Make sure the reverse proxy or hosting platform forwards the public request to the Node listener at `WEB_PORT=15029` over HTTP.
-4. Keep `WEB_HTTPS=false` while testing the origin directly over HTTP. Once the public hostname is served as HTTPS, set `WEB_HTTPS=true` and restart the Node process.
-5. In **SSL/TLS → Edge Certificates**, enable **Always Use HTTPS** only after the public HTTPS route works. Cloudflare's current documentation says this redirects all visitor HTTP requests to HTTPS and recommends doing the redirect at Cloudflare rather than at the origin to avoid redirect loops [5].
+Prerequisites before any public hostname is published:
 
-Flexible mode leaves the Cloudflare-to-origin hop unencrypted. Because this dashboard handles JWT-backed login and bot controls, treat Flexible as a temporary compatibility mode. Cloudflare advises Full or Full (strict) for stronger protection [4].
+1. Terminate TLS at the origin or at a reverse proxy in front of the Node
+   listener, using a Cloudflare Origin CA certificate or another certificate
+   the edge validates.
+2. In **SSL/TLS → Overview**, select **Full (strict)**. Cloudflare's mode
+   documentation states Full (strict) validates the origin certificate while
+   Full does not [6].
+3. In **SSL/TLS → Edge Certificates**, enable **Always Use HTTPS**. Cloudflare
+   documents this as redirecting visitor HTTP requests to HTTPS and recommends
+   doing the redirect at the edge rather than the origin to avoid redirect
+   loops [5].
+4. Set `WEB_HTTPS=true` so the session cookie is marked `Secure` and the
+   HTTPS-oriented browser policies are enabled, then restart the process.
+5. Keep the origin itself unpublished: firewall it or use an origin access
+   policy so the edge is the only public entry point, and set
+   `WEB_PUBLIC_ORIGIN` to the public origin so the same-origin CSRF guard
+   compares against the real deployment origin.
 
-## Recommended long-term setup
+## Emergency exception: Flexible (non-production only)
 
-After obtaining a certificate for the origin, use **Full (strict)**. Cloudflare's current mode documentation says Full (strict) validates the origin certificate, while Full does not validate it [6]. In the long-term layout:
+Flexible encrypts the visitor-to-Cloudflare connection while the
+Cloudflare-to-origin hop stays HTTP [4]. It is **not** a supported production
+configuration for this dashboard, and following it on an origin path that
+crosses an untrusted or shared network exposes authenticated session traffic to
+observation and tampering.
+
+Use it only when all of the following hold:
+
+- the edge-to-origin path is fully trusted and isolated (loopback, a private
+  VPC, or a container network with no other tenants), which
+  `docker-compose.yml` already provides by publishing to `127.0.0.1`;
+- the deployment carries no privileged traffic, or the exposure is time-boxed
+  for a specific migration;
+- a **dated migration plan** exists to move to Full (strict), and the plan is
+  tracked rather than deferred indefinitely.
+
+Steps, and their constraints:
+
+1. Create an `A`, `AAAA`, or `CNAME` record for `dashboard.example.com` and set
+   it to **Proxied** (orange cloud) only when the public request arrives on a
+   supported HTTP/HTTPS port [3].
+2. In **SSL/TLS → Overview**, choose **Flexible**. Cloudflare explicitly
+   recommends moving to Full or Full (strict) when possible [4].
+3. Forward the public request to the Node listener at `WEB_PORT=15029`.
+4. `WEB_HTTPS=false` is correct only while the public connection is genuinely
+   HTTP. Because `WEB_HTTPS=false` leaves the session cookie without the
+   `Secure` flag, a browser that reaches the origin over HTTP can send it back
+   over a downgrade — so never combine this exception with an
+   `Always Use HTTPS` redirect that leaves any HTTP route reachable.
+5. Migrate to Full (strict) and set `WEB_HTTPS=true` on the planned date.
+
+## Long-term setup (target state)
+
+After obtaining a certificate for the origin, use **Full (strict)**. In the
+target layout:
 
 ```dotenv
 WEB_PORT=15029
@@ -105,6 +155,29 @@ curl -N https://dashboard.example.com/api/events
 The HTTP request should return a Cloudflare redirect when **Always Use HTTPS** is enabled. The HTTPS request should return the application response, and the SSE request should remain open with `Content-Type: text/event-stream`.
 
 Do not use `https://ORIGIN_HOST:15029` unless that exact port is running a TLS listener. `WEB_HTTPS=true` does not create a TLS listener and cannot replace a certificate or reverse proxy.
+
+## Pre-publication checklist
+
+Do not publish a public hostname until every line is satisfied. This is the
+deployment-side counterpart to the application's own transport rules; the
+application cannot enforce them for you.
+
+- [ ] Cloudflare **SSL/TLS → Overview** is set to **Full (strict)**, not
+      Flexible, Full, or Off.
+- [ ] TLS is terminated at the origin or at a reverse proxy in front of the
+      Node listener, with a certificate the edge validates.
+- [ ] **Always Use HTTPS** is enabled and no HTTP route reaches the dashboard.
+- [ ] `WEB_HTTPS=true`, so the session cookie carries the `Secure` flag.
+- [ ] `WEB_PUBLIC_ORIGIN` matches the public origin exactly (scheme, host and
+      port), so the same-origin CSRF guard compares against the real
+      deployment origin rather than an inferred one.
+- [ ] The origin port is not published to the Internet: it is reachable only
+      from the edge (firewall rule, origin access policy, or the compose file's
+      loopback binding).
+- [ ] `WEB_TRUST_PROXY` is set to a hop count or explicit proxy list only if a
+      trusted proxy really is in front, and is unset otherwise.
+- [ ] If the Flexible exception was ever used, its dated migration to Full
+      (strict) has been completed and the exception removed.
 
 ## References
 

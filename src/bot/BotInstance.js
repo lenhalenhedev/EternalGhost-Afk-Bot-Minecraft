@@ -52,6 +52,9 @@ class BotInstance extends EventEmitter {
     this._respawnHandler = null;
     this._abort = null;
     this._connectGeneration = 0;
+    // EG-007: connection generation whose terminal disconnect has already been
+    // accounted for. -1 so generation 1 can never be pre-consumed.
+    this._terminalGeneration = -1;
     this._destroyed = false;
   }
 
@@ -92,7 +95,10 @@ class BotInstance extends EventEmitter {
       throw new Error(`Cannot start bot in state ${this._state}`);
     }
     if (this._queue.draining) this._queue.reset();
-    return this._queue.enqueue(() => this._connect());
+    // EG-006: forward the queue's task signal. Previously the closure took no
+    // arguments, so a queue timeout rejected the caller while the underlying
+    // DNS/connect promise kept running and could attach a bot afterwards.
+    return this._queue.enqueue((signal) => this._connect(signal));
   }
 
   async stop(force = false) {
@@ -122,7 +128,7 @@ class BotInstance extends EventEmitter {
     return this.sendInput(message);
   }
 
-  async _connect() {
+  async _connect(externalSignal = null) {
     if (this._destroyed) return;
 
     const generation = ++this._connectGeneration;
@@ -137,43 +143,99 @@ class BotInstance extends EventEmitter {
       this._connectGeneration === generation &&
       this._abort === abortController &&
       !abortController.signal.aborted;
-    this._setState(BOT_STATES.CONNECTING);
-    botLog(
-      this.id,
-      'info',
-      `Connecting to ${this.record.host}:${this.record.port} as ${this.record.username}`
+
+    // EG-006: bind this connection's lifetime to the caller's signal (the
+    // queue task controller). A queue timeout now invalidates the generation
+    // and aborts, so a late-resolving socket can never become current.
+    const detachSignal = this._linkExternalAbort(
+      externalSignal,
+      abortController
     );
-    if (!this._decryptPassword()) return;
-
-    let bot;
     try {
-      bot = await createMineflayerBot(this.record);
-    } catch (err) {
-      if (!isCurrentConnection()) return;
-      botLog(this.id, 'error', `createBot failed: ${err.message}`);
-      this._setState(BOT_STATES.ERROR);
-      return;
-    }
+      if (abortController.signal.aborted) return;
 
-    if (!isCurrentConnection()) {
+      this._setState(BOT_STATES.CONNECTING);
+      botLog(
+        this.id,
+        'info',
+        `Connecting to ${this.record.host}:${this.record.port} as ${this.record.username}`
+      );
+      if (!this._decryptPassword()) return;
+
+      let bot;
       try {
-        bot.end();
-      } catch {
-        /* ignore stale connection teardown errors */
+        bot = await createMineflayerBot(this.record, {
+          signal: abortController.signal,
+        });
+      } catch (err) {
+        if (!isCurrentConnection()) return;
+        botLog(this.id, 'error', `createBot failed: ${err.message}`);
+        this._setState(BOT_STATES.ERROR);
+        return;
       }
-      return;
+
+      if (!isCurrentConnection()) {
+        try {
+          bot.end();
+        } catch {
+          /* ignore stale connection teardown errors */
+        }
+        return;
+      }
+
+      this._bot = bot;
+      this._auth.reset();
+
+      try {
+        bindBotEvents(this, bot);
+      } catch (err) {
+        botLog(this.id, 'error', `Event binding failed: ${err.message}`);
+        await this._destroyBot('event binding failure');
+        this._setState(BOT_STATES.ERROR);
+      }
+    } finally {
+      detachSignal();
     }
+  }
 
-    this._bot = bot;
-    this._auth.reset();
+  /**
+   * Tie an external AbortSignal (the queue task controller) to this
+   * connection's own controller. Returns a detach function.
+   */
+  _linkExternalAbort(externalSignal, abortController) {
+    if (
+      !externalSignal ||
+      typeof externalSignal.addEventListener !== 'function'
+    ) {
+      return () => {};
+    }
+    if (externalSignal.aborted) {
+      this._cancelConnection(
+        abortController,
+        'was cancelled before it started'
+      );
+      return () => {};
+    }
+    const onAbort = () =>
+      this._cancelConnection(
+        abortController,
+        'was cancelled before completion'
+      );
+    externalSignal.addEventListener('abort', onAbort, { once: true });
+    return () => externalSignal.removeEventListener('abort', onAbort);
+  }
 
+  /** Abort an in-flight connection and return the instance to a startable state. */
+  _cancelConnection(abortController, reason) {
+    // A newer _connect() owns the slot; do not disturb it.
+    if (this._abort !== abortController) return;
     try {
-      bindBotEvents(this, bot);
-    } catch (err) {
-      botLog(this.id, 'error', `Event binding failed: ${err.message}`);
-      await this._destroyBot('event binding failure');
-      this._setState(BOT_STATES.ERROR);
+      abortController.abort();
+    } catch {
+      /* ignore */
     }
+    botLog(this.id, 'warn', `Connection start ${reason}.`);
+    this._setState(BOT_STATES.OFFLINE);
   }
 
   _decryptPassword() {

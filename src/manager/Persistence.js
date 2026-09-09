@@ -20,6 +20,9 @@ const botRepository = require('./botRepository');
 
 const MAX_PENDING_WRITES = 500;
 const FLUSH_TIMEOUT_MS = 10_000;
+// Fixed transaction advisory-lock key used to serialise bot-quota checks
+// across processes (EG-005).
+const QUOTA_LOCK_KEY = 4711001;
 
 class PersistenceError extends Error {
   constructor(code, message, cause) {
@@ -137,6 +140,53 @@ class Persistence {
         await this._insertActivity(client, normalised.id, action, actor, meta);
       },
       `saveBotWithActivity(${normalised.id}, ${action})`,
+      { critical: true }
+    );
+    this._data.bots[normalised.id] = normalised;
+    return normalised;
+  }
+
+  /**
+   * Create a bot row only when both configured quotas still have room, with
+   * the check and the insert inside one transaction (EG-005).
+   *
+   * A transaction advisory lock serialises concurrent creators *across
+   * processes*, so the count read below cannot be stale by the time the row is
+   * inserted. In-process serialisation is handled by BotManager's AsyncLock;
+   * this guard is what makes the invariant hold for multi-replica deployments.
+   */
+  async createBotWithQuota(record, action, actor, meta = {}, quota = {}) {
+    const normalised = this._normaliseRecord(record);
+    const { maxBots, maxBotsPerUser } = quota;
+    await this._enqueueTask(
+      async (client) => {
+        await client.query('SELECT pg_advisory_xact_lock($1)', [
+          QUOTA_LOCK_KEY,
+        ]);
+        const { rows } = await client.query(
+          `SELECT (SELECT COUNT(*) FROM bots)::int AS total_bots,
+                  (SELECT COUNT(*) FROM bots WHERE created_by = $1)::int AS owned_bots`,
+          [normalised.createdBy]
+        );
+        const total = Number(rows[0]?.total_bots ?? 0);
+        const owned = Number(rows[0]?.owned_bots ?? 0);
+        if (Number.isInteger(maxBotsPerUser) && owned >= maxBotsPerUser) {
+          const error = new PersistenceError(
+            'BOT_USER_QUOTA_REACHED',
+            `Maximum bot limit per user (${maxBotsPerUser}) reached.`
+          );
+          throw error;
+        }
+        if (Number.isInteger(maxBots) && total >= maxBots) {
+          throw new PersistenceError(
+            'BOT_QUOTA_REACHED',
+            `Maximum bot limit (${maxBots}) reached.`
+          );
+        }
+        await botRepository.saveBotFull(client, normalised);
+        await this._insertActivity(client, normalised.id, action, actor, meta);
+      },
+      `createBotWithQuota(${normalised.id})`,
       { critical: true }
     );
     this._data.bots[normalised.id] = normalised;

@@ -15,7 +15,22 @@ module.exports = {
       );
       if (!autocompleteCommand?.autocomplete) return;
       if (!isAdmin(interaction.user.id, config.access.adminIds)) return;
-      await autocompleteCommand.autocomplete(interaction);
+      // EG-001: autocomplete runs outside the command try/catch below. A
+      // rejected database lookup here used to escape as an unhandled rejection
+      // and shut the whole process down, so it now fails closed to an empty
+      // suggestion list instead.
+      try {
+        await autocompleteCommand.autocomplete(interaction);
+      } catch (err) {
+        logger.error(
+          `[Discord] Autocomplete /${interaction.commandName} threw: ${err?.stack || err?.message || err}`
+        );
+        if (!interaction.responded) {
+          await interaction.respond([]).catch(() => {
+            /* the interaction may already have expired */
+          });
+        }
+      }
       return;
     }
     if (!interaction.isChatInputCommand()) return;

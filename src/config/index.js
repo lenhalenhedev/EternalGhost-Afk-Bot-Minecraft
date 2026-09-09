@@ -20,6 +20,33 @@ function intEnv(key, fallback, bounds = {}) {
   return parsed.valid ? parsed.value : fallback;
 }
 
+/**
+ * Validate an origin-shaped environment value (EG-011).
+ *
+ * Only absolute http(s) origins without credentials, path, query or fragment
+ * are accepted; the value is normalised through the WHATWG URL parser so the
+ * caller can compare it byte-for-byte with `URL#origin`.
+ */
+function originEnv(key) {
+  const value = optionalEnv(key);
+  if (!value) return '';
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(
+      `${key} must be an absolute http(s) URL such as https://dashboard.example.com.`
+    );
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    throw new Error(`${key} must use http or https.`);
+  if (url.username || url.password)
+    throw new Error(`${key} must not contain credentials.`);
+  if (url.pathname !== '/' || url.search || url.hash)
+    throw new Error(`${key} must not contain a path, query or fragment.`);
+  return url.origin;
+}
+
 function boolEnv(key, fallback = false) {
   const raw = process.env[key];
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -131,6 +158,9 @@ try {
     web: {
       port: intEnv('WEB_PORT', 8080, { min: 1, max: 65535 }),
       https: boolEnv('WEB_HTTPS', false),
+      // EG-011: explicit public origin used for the exact same-origin CSRF
+      // comparison. Empty means "derive it from the request Host + WEB_HTTPS".
+      publicOrigin: originEnv('WEB_PUBLIC_ORIGIN'),
       jwtSecret: webJwtSecret || encryptionKey,
       jwtSecretUsesFallback: !webJwtSecret,
       trustProxy: webTrustProxy,
@@ -145,6 +175,18 @@ try {
     storage: {
       logDir: optionalEnv('LOG_DIR', './logs'),
       logLevel: optionalEnv('LOG_LEVEL', 'info'),
+      // EG-004: bound durable log volume. Total on-disk usage per file is
+      // logMaxFileBytes * (logMaxFiles + 1).
+      logMaxFileBytes: intEnv('LOG_MAX_FILE_BYTES', 10 * 1024 * 1024, {
+        min: 4_096,
+        max: 1_073_741_824,
+      }),
+      logMaxFiles: intEnv('LOG_MAX_FILES', 5, { min: 1, max: 100 }),
+      // Longest untrusted message retained per log record.
+      logMessageMaxChars: intEnv('LOG_MESSAGE_MAX_CHARS', 2_000, {
+        min: 128,
+        max: 65_536,
+      }),
     },
     database: {
       url: optionalEnv('DATABASE_URL'),
@@ -171,6 +213,11 @@ try {
       queueSize: intEnv('BOT_QUEUE_SIZE', 100, { min: 1 }),
       queueTimeout: intEnv('BOT_QUEUE_TIMEOUT', 10_000, { min: 1 }),
       logSummaryIntervalMin: intEnv('LOG_SUMMARY_INTERVAL_MIN', 15, { min: 1 }),
+      // EG-004: hard cap on frames buffered per slow/stalled SSE client.
+      sseMaxBufferedEvents: intEnv('SSE_MAX_BUFFERED_EVENTS', 200, {
+        min: 1,
+        max: 10_000,
+      }),
     },
   };
 } catch (err) {

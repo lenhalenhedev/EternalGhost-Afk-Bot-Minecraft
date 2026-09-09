@@ -2,6 +2,7 @@
 const {
   SlashCommandBuilder,
   EmbedBuilder,
+  MessageFlags,
   PermissionFlagsBits,
 } = require('discord.js');
 const BotManager = require('../../manager/BotManager');
@@ -23,7 +24,10 @@ module.exports = {
     ),
 
   async execute(interaction, principal) {
-    await interaction.deferReply();
+    // EG-008: this renders owner-scoped bot hosts, usernames and live state.
+    // A deferred reply without MessageFlags.Ephemeral is visible to everyone
+    // who can read the channel, so the response must be caller-only.
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const bots = BotManager.listAuthorizedBots(principal);
     if (bots.length === 0) {

@@ -1,5 +1,9 @@
 'use strict';
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
 const BotManager = require('../../manager/BotManager');
 const { buildStatusEmbed, errorEmbed } = require('../embeds');
 
@@ -16,7 +20,8 @@ module.exports = {
     ),
 
   async execute(interaction, principal) {
-    await interaction.deferReply();
+    // EG-008: detailed live status for one bot must stay caller-only.
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const instance = BotManager.resolveAuthorizedBot(

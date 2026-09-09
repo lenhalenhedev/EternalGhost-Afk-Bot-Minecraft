@@ -27,7 +27,18 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=web-build /app/web/dist ./web/dist
-COPY . .
+
+# EG-012: copy an explicit allowlist of runtime artefacts instead of the whole
+# build context. `COPY . .` shipped developer-only material into the production
+# image -- the security audit report under report/, the browser-verification
+# notes and other docs, the tasks/ probe helpers (which include a helper that
+# binds a listener), the Dockerfile and compose file themselves -- plus any
+# operator credential that happened to be sitting in the checkout. It also ran
+# *after* the web-build stage, so a stale host-side web/dist silently replaced
+# the freshly built bundle.
+COPY package.json ./
+COPY index.js run.js deploy-commands.js ./
+COPY src/ ./src/
 
 # Make only the log directory writable by the runtime user. The application
 # code and node_modules stay root-owned and read-only for uid `node` so a

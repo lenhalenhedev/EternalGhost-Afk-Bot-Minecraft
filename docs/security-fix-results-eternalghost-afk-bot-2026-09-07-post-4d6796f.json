@@ -1,0 +1,787 @@
+{
+  "schema_version": "1.1.0",
+  "audit_id": "eternalghost-afk-bot-2026-09-07-post-4d6796f",
+  "generated_at": "2026-09-08T14:12:04Z",
+  "repository": {
+    "name": "lenhalenhedev/EternalGhost-Afk-Bot-Minecraft",
+    "branch_under_review": "arena/01a0811c-eternalghost-afk-bot-minecraft",
+    "requested_branch_pattern": "security-fix/eternalghost-afk-bot-2026-09-07-post-4d6796f",
+    "branch_deviation": "The task asked for a branch named security-fix/<audit_id>. The execution environment pins this session to the single branch arena/01a0811c-eternalghost-afk-bot-minecraft and forbids creating, switching to or pushing any other branch, so that name could not be used. All work is on the pinned branch.",
+    "base_commit": "8d037fb8fa0e1a204cfc8e053b7970e3d1dc6c73",
+    "audit_commit_referenced": "4d6796f15c649cc4ebb5881803aab5378696fda8 (present in this clone after unshallow; it is the parent of the base commit)",
+    "last_remediation_commit": "7e3212deee2420bb3ab434e10f3da60de7847476",
+    "last_remediation_commit_note": "The SHA of the final fix commit (EG-013). The commit that adds these two artifacts follows it, so it is not the branch HEAD at the time the pull request is opened."
+  },
+  "environment": {
+    "node_version": "v22.22.3",
+    "required_node": ">=24.0.0",
+    "runtime_gap": "Node 24 could not be installed in this sandbox (nodejs.org and every mirror attempted were unreachable). All tests and lint were executed on Node v22.22.3 and must be re-run on Node 24 before production. Node 24 is not certified by this remediation.",
+    "os": "Debian GNU/Linux 12 (bookworm), Linux x86_64",
+    "package_manager": "npm 10.9.8",
+    "docker_available": false,
+    "postgresql_available": false,
+    "network_safety": "Outbound access limited to the npm registry. No Discord gateway, Minecraft server, production database, cloud metadata endpoint or private network was contacted. No public URL was requested."
+  },
+  "summary": {
+    "total_findings": 13,
+    "findings_revalidated": 13,
+    "findings_skipped": 0,
+    "by_final_status": {
+      "fixed": 11,
+      "verification_limited": 2
+    },
+    "by_severity": {
+      "critical": 0,
+      "high": 1,
+      "medium": 10,
+      "low": 2,
+      "informational": 0
+    },
+    "by_original_audit_status": {
+      "confirmed": 10,
+      "likely": 2,
+      "potential": 1
+    },
+    "regression_test_files_added": 8,
+    "regression_test_files_extended": 5,
+    "total_tests_before": 200,
+    "total_tests_after": 278,
+    "overall_status": "11 of 13 findings fixed and regression-tested; 2 fixed in code but with a verification gap (EG-005 real-PostgreSQL advisory lock, EG-012 Docker image build). No finding was skipped, blocked or rejected."
+  },
+  "findings": [
+    {
+      "finding_id": "EG-001",
+      "title": "Unhandled async event-boundary failures can deliberately terminate the entire service",
+      "severity": "High",
+      "priority": "P1",
+      "cwe": "CWE-248 / CWE-400",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "Two independent external event boundaries invoke asynchronous work without owning/catching its Promise: the Discord client wrapper discards every event.execute Promise, and stateChange discards critical Persistence.updateBotState. The top-level unhandledRejection policy then intentionally shuts down the entire process. In Discord.js, an uncaught listener rejection is surfaced as an unhandled Client error when no error listener is installed.",
+      "audit_evidence_location": "src/discord/client.js:31-35",
+      "post_revalidation_conclusion": "Discord gateway handlers, interaction handlers and bot-instance event handlers were plain async functions attached directly to emitters. Any rejection inside them became an unhandledRejection, and index.js terminates the process on unhandledRejection/uncaughtException, so one malformed external payload or one failed persistence write could take down the whole fleet.",
+      "final_status": "fixed",
+      "root_cause": "Discord gateway handlers, interaction handlers and bot-instance event handlers were plain async functions attached directly to emitters. Any rejection inside them became an unhandledRejection, and index.js terminates the process on unhandledRejection/uncaughtException, so one malformed external payload or one failed persistence write could take down the whole fleet.",
+      "remediation": "New src/utils/asyncBoundary.js exports safeEventListener(), which wraps async handlers so a rejection is logged through the redacting logger, counted, and never allowed to reach the process-level handler. Every gateway handler in src/discord/client.js, every interaction path in src/discord/events/interactionCreate.js and every bot-instance handler in src/manager/instanceEvents.js is now wrapped. Persistence writes gained a bounded retry with a failure counter exposed via getStateWriteStats() so a failing database produces observable telemetry instead of process death.",
+      "files_changed": [
+        "src/discord/client.js",
+        "src/discord/events/interactionCreate.js",
+        "src/manager/instanceEvents.js",
+        "src/utils/asyncBoundary.js",
+        "tests/asyncEventBoundary.test.js"
+      ],
+      "commit_short_sha": "d26ce00",
+      "commit_sha": "d26ce0093db52a9bef650d8a4eb4f9d3252dbfdd",
+      "commit_subject": "fix(EG-001): contain async event-boundary rejections instead of exiting",
+      "lines_added": 552,
+      "lines_deleted": 53,
+      "verification": "tests/asyncEventBoundary.test.js: 9/9 pass. Asserts a rejecting gateway handler leaves the process alive, the error is logged once, the counter increments, and non-rejecting handlers still receive their arguments. Full suite 278/278.",
+      "impact_blast_radius": "Whole process, dashboard, Discord control plane, and every managed bot.",
+      "residual_risk": "Rejections raised by third-party emitters outside the wrapped call sites remain unguarded by design.",
+      "notes": "index.js still exits on a genuinely unhandled rejection originating outside these boundaries; that behaviour was deliberately preserved as a last-resort signal."
+    },
+    {
+      "finding_id": "EG-002",
+      "title": "Dashboard token reissue is deterministic within a second and renewal usually rejects its own calculated TTL",
+      "severity": "Medium",
+      "priority": "P1",
+      "cwe": "CWE-384 / CWE-613",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "JWT payloads contain only userId and library-generated second-resolution timestamps, with no jti/random claim. Equal user/TTL requests in one Unix second generate the identical HMAC token and hash, so the UPSERT cannot invalidate the prior bearer. Renewal derives an arbitrary millisecond difference then passes it to a validator that requires exact whole seconds.",
+      "audit_evidence_location": "src/web/auth/tokenService.js:38-124",
+      "post_revalidation_conclusion": "Token issuance derived the payload solely from {userId, exp}, so two issuances inside the same second produced byte-identical tokens (no jti, no per-issue entropy), and renewal computed expiry from a millisecond clock without canonicalising to whole seconds, allowing a renewed token to outlive the configured maximum TTL by up to 999 ms and to be replayed interchangeably with any sibling token from the same second.",
+      "final_status": "fixed",
+      "root_cause": "Token issuance derived the payload solely from {userId, exp}, so two issuances inside the same second produced byte-identical tokens (no jti, no per-issue entropy), and renewal computed expiry from a millisecond clock without canonicalising to whole seconds, allowing a renewed token to outlive the configured maximum TTL by up to 999 ms and to be replayed interchangeably with any sibling token from the same second.",
+      "remediation": "src/web/auth/tokenService.js now builds every token through buildSignedToken(), which injects a cryptographic jti and a canonical iat, signs with an explicit expiresIn, and rounds every timestamp to whole seconds via toWholeSecond(). renewToken() clamps the resulting TTL to MAX_TOKEN_TTL_MS so a renewal can never exceed the configured lifetime.",
+      "files_changed": [
+        "src/web/auth/tokenService.js",
+        "tests/tokenServiceLifecycle.test.js"
+      ],
+      "commit_short_sha": "ea16e4e",
+      "commit_sha": "ea16e4ed9825ef6c511a14d7a8a6f819b377f256",
+      "commit_subject": "fix(EG-002): give every token issuance unique entropy and a canonical TTL",
+      "lines_added": 251,
+      "lines_deleted": 16,
+      "verification": "tests/tokenServiceLifecycle.test.js: 6/6 pass. Asserts two same-second issuances differ, each carries a unique jti and an integer iat, and a renewal chain never exceeds MAX_TOKEN_TTL_MS. Pre-existing tests/webToken.test.js calendar-year cap still passes unchanged. Full suite 278/278.",
+      "impact_blast_radius": "The affected dashboard user and any bots they own; admin sessions if the token belongs to an administrator.",
+      "residual_risk": "No server-side token revocation exists; jti uniqueness is detectable but not enforced.",
+      "notes": "Previously issued tokens without jti remain valid until their natural expiry; there is no revocation list, so rotation is the only way to retire them."
+    },
+    {
+      "finding_id": "EG-003",
+      "title": "Public-only Minecraft egress policy accepts special-use and IPv4-compatible IPv6 destinations",
+      "severity": "Medium",
+      "priority": "P1",
+      "cwe": "CWE-918",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "The IPv6 classifier only rejects a small set of prefixes. Deprecated site-local and IPv4-compatible IPv6 forms fall through to public=true, so assertPublicDestination accepts them without the exact-private-IP allowlist. The connector subsequently uses that accepted address as Mineflayer host.",
+      "audit_evidence_location": "src/utils/validators.js:153-229",
+      "post_revalidation_conclusion": "The public-only Minecraft egress policy enumerated IPv4 private/reserved ranges but classified IPv6 by a narrow allowlist of prefixes, so IPv6 special-use space (loopback ::1, link-local fe80::/10, unique-local fc00::/7, multicast ff00::/8, documentation, Teredo, 6to4, NAT64, CGNAT-mapped and IPv4-compatible/embedded forms) was treated as public and permitted as a bot connection target.",
+      "final_status": "fixed",
+      "root_cause": "The public-only Minecraft egress policy enumerated IPv4 private/reserved ranges but classified IPv6 by a narrow allowlist of prefixes, so IPv6 special-use space (loopback ::1, link-local fe80::/10, unique-local fc00::/7, multicast ff00::/8, documentation, Teredo, 6to4, NAT64, CGNAT-mapped and IPv4-compatible/embedded forms) was treated as public and permitted as a bot connection target.",
+      "remediation": "src/utils/validators.js now holds a 24-entry IPV6_DENIED_PREFIXES table with a reason string per range and an ipv6DenialReason() classifier; isPublicIpv6() is default-deny, accepting only 2000::/3. isPublicDestination() routes family 6 through it. New exports isPublicIpv6, ipv6DenialReason and IPV6_DENIED_PREFIXES.",
+      "files_changed": [
+        "README.md",
+        "src/utils/validators.js",
+        "tests/securityEgress.test.js"
+      ],
+      "commit_short_sha": "55f8815",
+      "commit_sha": "55f8815e0eb7347271ae934459c8aed06fcfde6f",
+      "commit_subject": "fix(EG-003): default-deny IPv6 special-use destinations in the egress policy",
+      "lines_added": 233,
+      "lines_deleted": 17,
+      "verification": "tests/securityEgress.test.js: 14/14 pass, including 6 new cases. Pre-existing assertions preserved: ::ffff:127.0.0.1 -> false, 2606:4700:4700::1111 -> true, assertPublicDestination still rejects mixed public/private result sets. Full suite 278/278.",
+      "impact_blast_radius": "Network interfaces reachable from the bot host.",
+      "residual_risk": "DNS rebinding between validation and socket connect is not pinned by an address-pinning layer.",
+      "notes": "DNS resolution itself is unchanged; the policy validates resolved addresses, so a re-resolving DNS name is re-checked per connection but not pinned."
+    },
+    {
+      "finding_id": "EG-004",
+      "title": "Untrusted runtime text reaches unredacted, unbounded durable logs and unbackpressured live SSE",
+      "severity": "Medium",
+      "priority": "P1",
+      "cwe": "CWE-532 / CWE-400",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "The generic log path uses safeText/sanitizeForLog, which removes control characters but does not invoke redactDiagnostic or enforce a length. AuthFlow sends attacker-controlled hard-failure server text to botLog. Pino JSONL streams append forever with no rotation/retention/size/rate control, and eventHub/routes write every live log to SSE without honoring res.write backpressure.",
+      "audit_evidence_location": "src/services/logger.js:22-141",
+      "post_revalidation_conclusion": "Untrusted runtime text (Discord kick reasons, server motd, user input, error strings) reached the durable log file and the in-memory SSE ring buffer without redaction or length bounds, and the log file grew without rotation, so an attacker-controlled server could write secret-shaped or unbounded text into logs and exhaust disk or per-subscriber memory.",
+      "final_status": "fixed",
+      "root_cause": "Untrusted runtime text (Discord kick reasons, server motd, user input, error strings) reached the durable log file and the in-memory SSE ring buffer without redaction or length bounds, and the log file grew without rotation, so an attacker-controlled server could write secret-shaped or unbounded text into logs and exhaust disk or per-subscriber memory.",
+      "remediation": "New redactForLog() in src/utils/security.js scrubs credential-shaped substrings and truncates to LOG_MESSAGE_MAX_CHARS (default 2000, scanning LOG_REDACTION_SCAN_CHARS=8000). New src/services/logFile.js RotatingFileStream rotates at LOG_MAX_FILE_BYTES (default 10 MiB) keeping LOG_MAX_FILES (default 5) generations and swallows post-teardown stream errors. New src/web/sse/sseWriter.js SseWriter is drain-aware and evicts the oldest log frame past SSE_MAX_BUFFERED_EVENTS (default 200). logger.safeText rewires both streams and src/web/routes/events.js exports formatEvent for testability.",
+      "files_changed": [
+        ".env.example",
+        "README.md",
+        "src/config/index.js",
+        "src/services/logFile.js",
+        "src/services/logger.js",
+        "src/utils/security.js",
+        "src/web/routes/events.js",
+        "src/web/sse/sseWriter.js",
+        "tests/securityLogHygiene.test.js"
+      ],
+      "commit_short_sha": "dee4d5c",
+      "commit_sha": "dee4d5ccfa58cb7e6fb24027cd93ec27f5e57f63",
+      "commit_subject": "fix(EG-004): redact and bound untrusted log text, rotate files, bound SSE",
+      "lines_added": 635,
+      "lines_deleted": 17,
+      "verification": "tests/securityLogHygiene.test.js: 11/11 pass. Covers redaction of token-shaped text, hard truncation, rotation across generations, bounded SSE backlog with oldest-first eviction of log frames, and backpressure handling. Full suite 278/278.",
+      "impact_blast_radius": "Host log volume, process memory, dashboard log viewers, and operational log aggregation.",
+      "residual_risk": "Pattern-based redaction cannot guarantee removal of unknown secret formats.",
+      "notes": "Redaction is pattern-based; a novel secret format that matches none of the patterns would still be logged in truncated form."
+    },
+    {
+      "finding_id": "EG-010",
+      "title": "Remote PostgreSQL hostnames beginning with 127. are misclassified as loopback and permitted without TLS",
+      "severity": "Medium",
+      "priority": "P2",
+      "cwe": "CWE-295 / CWE-319",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "Loopback detection applies a textual /^127\\./ prefix to any hostname rather than first determining whether it is an IP literal. A remote DNS hostname that starts with those characters is treated as local, so buildSslConfig does not require DB_SSL, rejectUnauthorized, or a CA.",
+      "audit_evidence_location": "src/config/database.js:81-161",
+      "post_revalidation_conclusion": "isLoopbackDatabaseHost classified a host as loopback by testing whether the hostname string started with '127.', so a remote host such as 127.example.com or 127.0.0.1.evil.test was treated as loopback. Loopback hosts are the ones allowed to run with SSL disabled, so a remote database could be reached over plaintext without the operator opting in.",
+      "final_status": "fixed",
+      "root_cause": "isLoopbackDatabaseHost classified a host as loopback by testing whether the hostname string started with '127.', so a remote host such as 127.example.com or 127.0.0.1.evil.test was treated as loopback. Loopback hosts are the ones allowed to run with SSL disabled, so a remote database could be reached over plaintext without the operator opting in.",
+      "remediation": "src/config/database.js now resolves the host structurally: trim, strip IPv6 brackets and a trailing dot, lowercase, then net.isIP. Family 4 goes through a real 127.0.0.0/8 octet check (isLoopbackIpv4), family 6 accepts only ::1, and a non-IP host is loopback only if it is exactly 'localhost'. A new allowsPlaintextTransport(host) gates the no-TLS path behind DB_ALLOW_LOOPBACK_PLAINTEXT (default true, preserving existing loopback behaviour) and both functions are exported.",
+      "files_changed": [
+        ".env.example",
+        "README.md",
+        "src/config/database.js",
+        "tests/databaseConfig.test.js"
+      ],
+      "commit_short_sha": "3cbaf8d",
+      "commit_sha": "3cbaf8dc154aa6f0b7f95e5d822458600f79213d",
+      "commit_subject": "fix(EG-010): classify loopback database hosts by IP literal, not text prefix",
+      "lines_added": 130,
+      "lines_deleted": 7,
+      "verification": "tests/databaseConfig.test.js: 11/11 pass, including 5 new cases. Pre-existing assertions preserved: abort on missing CA, reject DB_SSL=false and DB_SSL_REJECT_UNAUTHORIZED=false, reject TLS params embedded in DATABASE_URL, PGHOST=127.0.0.1 still yields ssl: null. Full suite 278/278.",
+      "impact_blast_radius": "All bot records, tokens, and activity data in the connected database.",
+      "residual_risk": "Plaintext loopback transport remains permitted by default for backward compatibility; opt out with DB_ALLOW_LOOPBACK_PLAINTEXT=false.",
+      "notes": "DB_ALLOW_LOOPBACK_PLAINTEXT defaults to true to avoid breaking existing local deployments; an operator who wants mandatory TLS everywhere must set it to false."
+    },
+    {
+      "finding_id": "EG-005",
+      "title": "Bot quota checks race across concurrent asynchronous creation requests",
+      "severity": "Medium",
+      "priority": "P2",
+      "cwe": "CWE-367",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "Per-owner and global count checks use the in-memory map before an awaited persistence operation. Multiple requests can all observe capacity, persist serially, and each register afterward. No database transaction/reservation constrains the count.",
+      "audit_evidence_location": "src/manager/BotManager.js:141-179",
+      "post_revalidation_conclusion": "BotManager.createBot counted existing bots, compared against the quota, and inserted in three separate asynchronous steps with no mutual exclusion, so N concurrent creations from the same owner each observed the same pre-insert count and all passed the check.",
+      "final_status": "verification_limited",
+      "root_cause": "BotManager.createBot counted existing bots, compared against the quota, and inserted in three separate asynchronous steps with no mutual exclusion, so N concurrent creations from the same owner each observed the same pre-insert count and all passed the check.",
+      "remediation": "New src/utils/asyncLock.js provides a keyed mutex. BotManager.createBot runs its whole critical section under a single key ('bot:create') via runExclusive, and delegates the reservation to a new Persistence.createBotWithQuota() which takes SELECT pg_advisory_xact_lock(4711001) and re-counts total_bots/owned_bots inside the same transaction before inserting, throwing BOT_USER_QUOTA_REACHED / BOT_QUOTA_REACHED on overflow. BotManager now also exports its class for test instantiation.",
+      "files_changed": [
+        "src/manager/BotManager.js",
+        "src/manager/Persistence.js",
+        "src/utils/asyncLock.js",
+        "tests/botQuotaRace.test.js"
+      ],
+      "commit_short_sha": "334f347",
+      "commit_sha": "334f347d6ba64b57bda49633a2d48edc5a3a1510",
+      "commit_subject": "fix(EG-005): make bot quota reservation atomic under concurrent creates",
+      "lines_added": 394,
+      "lines_deleted": 8,
+      "verification": "tests/botQuotaRace.test.js: 7/7 pass, including two concurrent-burst tests. Negative control: replacing the runExclusive wrapper with a direct call fails tests 4 and 5, proving they detect the race. Full suite 278/278. LIMITATION: no PostgreSQL server exists in this environment, so the multi-process advisory-lock path was exercised only against a fake client, never against a real database.",
+      "impact_blast_radius": "Per-owner and global fleet capacity, depending on the race position.",
+      "residual_risk": "pg_advisory_xact_lock behaviour under a real PostgreSQL server and across multiple processes was not integration-tested.",
+      "notes": "The single-process mutex already closes the realistic attack surface for this deployment (one Node process); the advisory lock is defence in depth for a future multi-process scale-out and is the part that remains unverified."
+    },
+    {
+      "finding_id": "EG-006",
+      "title": "Queue timeout reports failure while an uncancelled bot startup can later attach and run",
+      "severity": "Medium",
+      "priority": "P2",
+      "cwe": "CWE-400",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "Queue creates an AbortSignal on timeout, but start passes a zero-argument closure and _connect/createMineflayerBot do not receive or observe that signal. The queue rejects its caller and starts draining later work while the original DNS/connect promise continues. Its own separate abort controller remains current, so a late bot is attached.",
+      "audit_evidence_location": "src/bot/BotInstance.js:89-177",
+      "post_revalidation_conclusion": "BotInstance.start() pushed a task onto the connect queue and applied a timeout to the enqueue call only. When the queue timed out, start() reported failure and released, but the queued task could still run later and open a live Mineflayer socket, producing a bot the manager believed was offline.",
+      "final_status": "fixed",
+      "root_cause": "BotInstance.start() pushed a task onto the connect queue and applied a timeout to the enqueue call only. When the queue timed out, start() reported failure and released, but the queued task could still run later and open a live Mineflayer socket, producing a bot the manager believed was offline.",
+      "remediation": "start() now passes the queue's abort signal into the task ((signal) => this._connect(signal)). _connect() links that external signal to its internal AbortController via _linkExternalAbort, and _cancelConnection invalidates the connection generation, ends any late socket and forces the OFFLINE state on abort. src/bot/connection/connector.js refuses to open a socket when the signal is already aborted, both before and after destination resolution.",
+      "files_changed": [
+        "src/bot/BotInstance.js",
+        "src/bot/connection/connector.js",
+        "tests/botConnectCancellation.test.js"
+      ],
+      "commit_short_sha": "a9ed641",
+      "commit_sha": "a9ed641de93d52f0f6bec16be9dd0b381af99152",
+      "commit_subject": "fix(EG-006): cancel an in-flight connect when its queued start times out",
+      "lines_added": 305,
+      "lines_deleted": 30,
+      "verification": "tests/botConnectCancellation.test.js: 5/5 pass. Asserts an aborted queue task never reaches createBot, a connect already in flight is torn down and lands OFFLINE, and the generation counter invalidates late events. Negative control: removing the signal forwarder fails tests 1 and 2. Pre-existing tests/botInstanceLifecycle.test.js (staleBot.endCalls === 1) still passes. Full suite 278/278.",
+      "impact_blast_radius": "The affected bot and shared host capacity.",
+      "residual_risk": "Cancellation is cooperative; it cannot abort an already-established socket without closing it.",
+      "notes": "A socket that has already completed its handshake is closed rather than never opened; the cancellation prevents the late-connect surprise, not an in-progress TCP handshake."
+    },
+    {
+      "finding_id": "EG-007",
+      "title": "One Mineflayer disconnect can consume the reconnect budget twice",
+      "severity": "Low",
+      "priority": "P2",
+      "cwe": "CWE-400 / CWE-841",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "Both terminal event handlers independently call handleDisconnect without a per-connection terminal guard. Mineflayer registers kicked when it receives a disconnect packet and also emits end when the underlying client ends. handleDisconnect clears/replaces the timer but increments attempts/history each invocation.",
+      "audit_evidence_location": "src/bot/connection/botEventBinder.js:91-112",
+      "post_revalidation_conclusion": "Mineflayer emits 'kicked' for the disconnect packet and then 'end' for the same underlying socket. Both handlers in src/bot/connection/botEventBinder.js called ReconnectPolicy.handleDisconnect unconditionally, and handleDisconnect always incremented _attempts/_history, so one physical disconnect consumed two of five reconnect slots.",
+      "final_status": "fixed",
+      "root_cause": "Mineflayer emits 'kicked' for the disconnect packet and then 'end' for the same underlying socket. Both handlers in src/bot/connection/botEventBinder.js called ReconnectPolicy.handleDisconnect unconditionally, and handleDisconnect always incremented _attempts/_history, so one physical disconnect consumed two of five reconnect slots.",
+      "remediation": "New claimTerminalDisconnect(instance, kind) in botEventBinder.js is keyed to the instance's connection generation: the first kicked/end for a generation drives the lifecycle, later terminal events for that generation are log-only, and a new _connect() bumps _connectGeneration which re-arms the guard. BotInstance initialises _terminalGeneration to -1 so generation 1 can never be pre-consumed.",
+      "files_changed": [
+        "src/bot/BotInstance.js",
+        "src/bot/connection/botEventBinder.js",
+        "tests/terminalEventDedup.test.js"
+      ],
+      "commit_short_sha": "c5f0e74",
+      "commit_sha": "c5f0e745313f0807e1fe91ae903b615f85809839",
+      "commit_subject": "fix(EG-007): charge the reconnect budget once per physical disconnect",
+      "lines_added": 186,
+      "lines_deleted": 1,
+      "verification": "tests/terminalEventDedup.test.js: 6/6 pass. Covers kicked-then-end and end-then-kicked (one attempt each), a lone terminal event still recovering to RECONNECTING, a fresh generation getting its own single charge, and three repeated disconnects costing three attempts rather than six. Negative control: removing the guard fails 4 of the 6 tests. Full suite 278/278.",
+      "impact_blast_radius": "One bot per terminal connection, with shared log/alert noise.",
+      "residual_risk": "None material.",
+      "notes": "None identified. The guard is per-connection and cannot suppress a genuine second disconnect on a new connection."
+    },
+    {
+      "finding_id": "EG-008",
+      "title": "Three administrator Discord commands publish fleet details to every channel viewer",
+      "severity": "Medium",
+      "priority": "P2",
+      "cwe": "CWE-200",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "list-bot, status-bot, and stats defer normal visible responses despite rendering owner-scoped bot host/user/status/position and process/fleet data. Admin invocation authorization does not restrict subsequent message visibility to the caller.",
+      "audit_evidence_location": "src/discord/commands/list-bot.js:25-49",
+      "post_revalidation_conclusion": "/list-bot, /status-bot and /stats called interaction.deferReply() with no flags while rendering owner-scoped operational data (bot usernames, hosts, ports, live state and position, plus process and fleet resource telemetry). Discord application-command permissions gate invocation, not visibility, so any member able to read the channel could read the response, and no later edit can make a non-ephemeral deferred reply private.",
+      "final_status": "fixed",
+      "root_cause": "/list-bot, /status-bot and /stats called interaction.deferReply() with no flags while rendering owner-scoped operational data (bot usernames, hosts, ports, live state and position, plus process and fleet resource telemetry). Discord application-command permissions gate invocation, not visibility, so any member able to read the channel could read the response, and no later edit can make a non-ephemeral deferred reply private.",
+      "remediation": "All three commands now defer with { flags: MessageFlags.Ephemeral }, matching the convention already used by the remaining 13 command modules.",
+      "files_changed": [
+        "src/discord/commands/list-bot.js",
+        "src/discord/commands/stats.js",
+        "src/discord/commands/status-bot.js",
+        "tests/discordCommandPrivacy.test.js"
+      ],
+      "commit_short_sha": "3eb5eae",
+      "commit_sha": "3eb5eae7bf63303df9fa44beeafe3d947c4af552",
+      "commit_subject": "fix(EG-008): make /list-bot, /status-bot and /stats responses ephemeral",
+      "lines_added": 205,
+      "lines_deleted": 5,
+      "verification": "tests/discordCommandPrivacy.test.js: 4/4 pass. Executes each command against a stubbed BotManager and fake interaction and asserts the single deferReply carries exactly { flags: MessageFlags.Ephemeral } and that no channel-visible reply is created, including the /status-bot error path. A static audit enumerates every module in src/discord/commands and fails if any deferReply or reply call lacks the ephemeral flag, with an explicitly empty public-response allowlist; all 16 modules pass. `node tasks/validate-discord-commands.js` reports 17 valid schemas. Full suite 278/278.",
+      "impact_blast_radius": "Up to all bots returned in list/stats and all viewers of the message channel.",
+      "residual_risk": "Previously posted non-ephemeral responses cannot be recalled by this change.",
+      "notes": "Responses that were already posted publicly before this change remain in channel history."
+    },
+    {
+      "finding_id": "EG-009",
+      "title": "Discord deletion confirmation collectors are not bound to the prompt message or a unique nonce",
+      "severity": "Medium",
+      "priority": "P2",
+      "cwe": "CWE-841",
+      "original_audit_status": "likely",
+      "original_audit_conclusion": "Every deletion dialog uses the same two component IDs, and awaitMessageComponent is collected from the whole channel with a filter that checks only the clicking user and static ID. It neither checks i.message.id against the edited reply nor binds a per-dialog cryptographic nonce/target.",
+      "audit_evidence_location": "src/discord/commands/delete-bot.js:42-103",
+      "post_revalidation_conclusion": "Every deletion dialog used the same two component IDs ('confirm_delete' / 'cancel_delete') and channel.awaitMessageComponent filtered only on the clicking user plus that static ID while collecting from the whole channel. With two prompts open for the same administrator, one Confirm click satisfied both collectors, so the click could drive deletion of a target it never pointed at.",
+      "final_status": "fixed",
+      "root_cause": "Every deletion dialog used the same two component IDs ('confirm_delete' / 'cancel_delete') and channel.awaitMessageComponent filtered only on the clicking user plus that static ID while collecting from the whole channel. With two prompts open for the same administrator, one Confirm click satisfied both collectors, so the click could drive deletion of a target it never pointed at.",
+      "remediation": "Each dialog now generates a fresh 9-byte random nonce via crypto.randomBytes and embeds it plus the resolved bot ID in both component IDs (confirm_delete:<nonce>:<botId>). The command captures the prompt message ID from the editReply result (falling back to interaction.fetchReply) and the collector filter requires the clicking user, the exact nonce-scoped custom ID, and that exact prompt message. Confirm versus cancel is decided from the matched custom ID rather than a shared literal.",
+      "files_changed": [
+        "src/discord/commands/delete-bot.js",
+        "tests/deleteConfirmationBinding.test.js"
+      ],
+      "commit_short_sha": "0710bdc",
+      "commit_sha": "0710bdcee7123f05addbaa30f5358a46f20e1a6a",
+      "commit_subject": "fix(EG-009): bind the delete confirmation to its prompt message and nonce",
+      "lines_added": 286,
+      "lines_deleted": 9,
+      "verification": "tests/deleteConfirmationBinding.test.js: 3/3 pass. Opens two dialogs for one user in one channel, clicks Confirm on the second and asserts exactly one collector accepts it and only that target is deleted; asserts a click with a different message ID, a forged nonce, or another user is ignored; asserts Cancel deletes nothing. Negative control: restoring the original static shared IDs and user-only filter fails all three tests. Full suite 278/278.",
+      "impact_blast_radius": "Any two simultaneously pending deletion targets for a user/channel.",
+      "residual_risk": "Collector lifetime on the channel is unchanged at 30s; only the matching criteria were tightened.",
+      "notes": "The collector still listens on the channel for 30 seconds; the filter now rejects everything that is not this exact prompt, but the listener lifetime is unchanged."
+    },
+    {
+      "finding_id": "EG-011",
+      "title": "CSRF Origin fallback accepts a different scheme/port whenever Fetch Metadata is absent",
+      "severity": "Low",
+      "priority": "P3",
+      "cwe": "CWE-352",
+      "original_audit_status": "likely",
+      "original_audit_conclusion": "When Sec-Fetch-Site is absent, the fallback compares only hostname and deliberately strips the request port; it does not compare URL origin/scheme/port against a configured public origin. Browser cookies are host-scoped rather than port-scoped, so an attacker-controlled same-host alternate HTTPS origin can be cross-origin while passing this check.",
+      "audit_evidence_location": "src/web/middleware/sameOriginGuard.js:17-47",
+      "post_revalidation_conclusion": "The Origin fallback in src/web/middleware/sameOriginGuard.js deliberately dropped the port (String(req.headers.host).split(':')[0]) and compared hostnames only. Browser cookies are host-scoped rather than port-scoped, so a different origin on the same host -- a second tenant, or a compromised application on another port of the same IP or hostname -- satisfied the guard while remaining cross-origin.",
+      "final_status": "fixed",
+      "root_cause": "The Origin fallback in src/web/middleware/sameOriginGuard.js deliberately dropped the port (String(req.headers.host).split(':')[0]) and compared hostnames only. Browser cookies are host-scoped rather than port-scoped, so a different origin on the same host -- a second tenant, or a compromised application on another port of the same IP or hostname -- satisfied the guard while remaining cross-origin.",
+      "remediation": "The guard now compares the full URL#origin (scheme, host, port) against the deployment's own origin, resolved as the configured WEB_PUBLIC_ORIGIN when set, otherwise the scheme implied by WEB_HTTPS combined with the request Host header so TLS-terminating proxy deployments keep working. It fails closed when no expected origin can be determined. WEB_PUBLIC_ORIGIN is validated at startup and must be an absolute http(s) origin with no credentials, path, query or fragment.",
+      "files_changed": [
+        ".env.example",
+        "docs/security-deployment.md",
+        "src/config/index.js",
+        "src/web/middleware/sameOriginGuard.js",
+        "tasks/check-web-security.js",
+        "tests/webSecurity.test.js"
+      ],
+      "commit_short_sha": "cae108b",
+      "commit_sha": "cae108bacb67c2c0515ea3414bdb48d52ecb6b11",
+      "commit_subject": "fix(EG-011): compare the complete origin in the same-origin CSRF guard",
+      "lines_added": 223,
+      "lines_deleted": 14,
+      "verification": "tasks/check-web-security.js gained ACT=csrforiginstrict, which exercises same-host-different-port, same-host-different-scheme, request-origin, no-origin, malformed-origin and configured-canonical cases against a real Express app bound to 127.0.0.1. tests/webSecurity.test.js: 7/7 pass including 4 new tests and a WEB_HTTPS=true proxy regression. Negative control: restoring the hostname-only comparison fails 3 of the 4 new tests while the pre-existing EG-004 cross-origin tests still pass. Full suite 278/278.",
+      "impact_blast_radius": "Resources accessible to the victim session.",
+      "residual_risk": "Operators behind a proxy that rewrites Host must set WEB_PUBLIC_ORIGIN, otherwise the derived origin will not match and requests are rejected (fail closed, not fail open).",
+      "notes": "SameSite=Lax plus JSON-only body parsing already blocked the classic form path, so the practical exposure was narrow; the guard is now correct regardless."
+    },
+    {
+      "finding_id": "EG-012",
+      "title": "Docker runtime image accepts unreviewed build-context artifacts after trusted build output",
+      "severity": "Medium",
+      "priority": "P2",
+      "cwe": "CWE-829 / CWE-540",
+      "original_audit_status": "confirmed",
+      "original_audit_conclusion": "The runtime stage copies reviewed builder output and then overlays the entire Docker context. .dockerignore does not exclude Git-ignored web/dist, so a pre-existing artifact can replace the builder output. The broad context copy also permits non-excluded local credential files (for example common package-manager credentials or environment variants) into image layers.",
+      "audit_evidence_location": "Dockerfile:28-30",
+      "post_revalidation_conclusion": "The runtime stage ended with `COPY . .`, so everything in the build context that .dockerignore did not already exclude was shipped into the production image: the security audit report under report/, browser-verification notes and other docs, the tasks/ probe helpers (one of which binds a network listener), the Dockerfile and compose file themselves, plus any operator credential left in the checkout. It also ran after `COPY --from=web-build /app/web/dist`, so a stale host-side web/dist silently replaced the freshly built bundle.",
+      "final_status": "verification_limited",
+      "root_cause": "The runtime stage ended with `COPY . .`, so everything in the build context that .dockerignore did not already exclude was shipped into the production image: the security audit report under report/, browser-verification notes and other docs, the tasks/ probe helpers (one of which binds a network listener), the Dockerfile and compose file themselves, plus any operator credential left in the checkout. It also ran after `COPY --from=web-build /app/web/dist`, so a stale host-side web/dist silently replaced the freshly built bundle.",
+      "remediation": "The runtime stage now copies an explicit allowlist -- package.json, index.js, run.js, deploy-commands.js and src/ -- leaving node_modules and the dashboard bundle to their build stages and never writing under web/ afterwards. .dockerignore additionally excludes tasks/, docs/, report/, web/dist, web/node_modules, web/.vite, the Dockerfile and compose files, credential globs (*.pem, *.key, *.crt, *.p12, *.pfx, credentials*.json, serviceAccount*.json, *.kubeconfig) and .gitattributes.",
+      "files_changed": [
+        ".dockerignore",
+        "Dockerfile",
+        "tests/dockerImageHygiene.test.js"
+      ],
+      "commit_short_sha": "5c402bc",
+      "commit_sha": "5c402bcb63234027470cd2486e7a5cfff20be142",
+      "commit_subject": "fix(EG-012): copy a runtime allowlist into the image instead of the context",
+      "lines_added": 362,
+      "lines_deleted": 1,
+      "verification": "tests/dockerImageHygiene.test.js: 6/6 pass. Parses the Dockerfile into stages and asserts no whole-context copy in the runtime stage, every context source is allowlisted, no context COPY shadows web/dist, .dockerignore excludes the developer and credential paths, and every top-level repository entry is copied explicitly, consumed only by an earlier stage, or ignored. A module-graph walk from index.js resolves 58 local modules and asserts none live outside the copied paths. Negative control: restoring `COPY . .` and dropping the ignore patterns fails 4 of the 6 tests. Full suite 278/278. LIMITATION: Docker is not installed in this environment, so no image was built, run or inspected; verification is static plus the module-graph walk.",
+      "impact_blast_radius": "Every deployment/browser receiving the produced image.",
+      "residual_risk": "No container was actually built or executed; image contents were verified statically only.",
+      "notes": "The allowlist is now enforced by a test that walks the real require graph, so adding a new root-level runtime file without updating the Dockerfile fails CI rather than silently shipping a broken image."
+    },
+    {
+      "finding_id": "EG-013",
+      "title": "Deployment guide presents Cloudflare Flexible TLS as a short-term setup for JWT-bearing controls",
+      "severity": "Medium",
+      "priority": "P3",
+      "cwe": "CWE-319",
+      "original_audit_status": "potential",
+      "original_audit_conclusion": "The guide labels a mode with a plaintext edge-to-origin hop as a recommended short-term setup for a session-bearing administration surface. It warns about the risk and later recommends Full (strict), but does not make encrypted origin transport/isolation a prerequisite before public use.",
+      "audit_evidence_location": "docs/cloudflare-reverse-proxy.md:52-73",
+      "post_revalidation_conclusion": "docs/cloudflare-reverse-proxy.md presented Cloudflare Flexible -- which leaves the edge-to-origin hop plaintext -- as the recommended short-term setup for a dashboard carrying JWT session cookies and privileged bot controls. It warned about the risk and later recommended Full (strict), but nothing made an encrypted or isolated origin path a prerequisite before publishing a public hostname, and the compatibility matrix listed a plaintext-origin row as an ordinary option. WEB_HTTPS cannot compensate: it only changes browser headers and cookie flags and never creates a TLS listener.",
+      "final_status": "fixed",
+      "root_cause": "docs/cloudflare-reverse-proxy.md presented Cloudflare Flexible -- which leaves the edge-to-origin hop plaintext -- as the recommended short-term setup for a dashboard carrying JWT session cookies and privileged bot controls. It warned about the risk and later recommended Full (strict), but nothing made an encrypted or isolated origin path a prerequisite before publishing a public hostname, and the compatibility matrix listed a plaintext-origin row as an ordinary option. WEB_HTTPS cannot compensate: it only changes browser headers and cookie flags and never creates a TLS listener.",
+      "remediation": "The guide now leads with 'The only recommended public deployment path: Full (strict)' listing origin TLS termination, Always Use HTTPS, WEB_HTTPS=true, WEB_PUBLIC_ORIGIN and an unpublished origin as prerequisites; demotes Flexible to 'Emergency exception: Flexible (non-production only)' permitted only when the edge-to-origin path is fully trusted and isolated, no privileged traffic is carried, and a dated migration plan is tracked; marks every plaintext-origin row in the compatibility matrix as not for production; and adds a pre-publication checklist covering Full (strict), Always Use HTTPS, WEB_HTTPS, WEB_PUBLIC_ORIGIN, origin isolation, WEB_TRUST_PROXY and completion of any Flexible migration.",
+      "files_changed": [
+        "docs/cloudflare-reverse-proxy.md",
+        "tests/deploymentDocReview.test.js"
+      ],
+      "commit_short_sha": "7e3212d",
+      "commit_sha": "7e3212deee2420bb3ab434e10f3da60de7847476",
+      "commit_subject": "docs(EG-013): make Full (strict) the only recommended public deployment path",
+      "lines_added": 273,
+      "lines_deleted": 21,
+      "verification": "tests/deploymentDocReview.test.js: 5/5 pass, asserting statically that no heading describes Flexible as recommended, the 'short-term setup' framing is gone, the exception states it is unsupported in production and requires isolation plus a dated migration plan, Full (strict) is named as the only supported public path, every plaintext-origin matrix row is marked non-production, and the pre-publication checklist covers the required controls. Negative control: restoring the original guide fails 4 of the 5 tests. Full suite 278/278. Verification is documentation review only -- no Cloudflare account, DNS record, origin or public URL was contacted.",
+      "impact_blast_radius": "All dashboard users and bot controls transiting the affected origin path.",
+      "residual_risk": "No live Cloudflare deployment was verified; guidance is enforced by review, not by the application.",
+      "notes": "Documentation cannot enforce operator behaviour; a deployment owner can still select Flexible. The guide now makes that an explicit, gated exception rather than a recommendation."
+    }
+  ],
+  "verification": {
+    "commands": [
+      {
+        "command": "npm test",
+        "exit_code": 0,
+        "result": "278 tests, 278 pass, 0 fail, 0 skipped (node:test)"
+      },
+      {
+        "command": "npm run lint",
+        "exit_code": 0,
+        "result": "eslint . clean, 0 errors, 0 warnings"
+      },
+      {
+        "command": "node tasks/validate-discord-commands.js",
+        "exit_code": 0,
+        "result": "17 command schemas valid"
+      }
+    ],
+    "per_finding_test_suites": {
+      "EG-001": {
+        "file": "tests/asyncEventBoundary.test.js",
+        "tests": 9,
+        "pass": 9
+      },
+      "EG-002": {
+        "file": "tests/tokenServiceLifecycle.test.js",
+        "tests": 6,
+        "pass": 6
+      },
+      "EG-003": {
+        "file": "tests/securityEgress.test.js",
+        "tests": 14,
+        "pass": 14
+      },
+      "EG-004": {
+        "file": "tests/securityLogHygiene.test.js",
+        "tests": 11,
+        "pass": 11
+      },
+      "EG-005": {
+        "file": "tests/botQuotaRace.test.js",
+        "tests": 7,
+        "pass": 7
+      },
+      "EG-006": {
+        "file": "tests/botConnectCancellation.test.js",
+        "tests": 5,
+        "pass": 5
+      },
+      "EG-007": {
+        "file": "tests/terminalEventDedup.test.js",
+        "tests": 6,
+        "pass": 6
+      },
+      "EG-008": {
+        "file": "tests/discordCommandPrivacy.test.js",
+        "tests": 4,
+        "pass": 4
+      },
+      "EG-009": {
+        "file": "tests/deleteConfirmationBinding.test.js",
+        "tests": 3,
+        "pass": 3
+      },
+      "EG-010": {
+        "file": "tests/databaseConfig.test.js",
+        "tests": 11,
+        "pass": 11
+      },
+      "EG-011": {
+        "file": "tests/webSecurity.test.js",
+        "tests": 7,
+        "pass": 7
+      },
+      "EG-012": {
+        "file": "tests/dockerImageHygiene.test.js",
+        "tests": 6,
+        "pass": 6
+      },
+      "EG-013": {
+        "file": "tests/deploymentDocReview.test.js",
+        "tests": 5,
+        "pass": 5
+      }
+    },
+    "negative_controls": [
+      {
+        "finding_id": "EG-005",
+        "reverted": "runExclusive wrapper replaced with a direct call",
+        "observed": "2 of 7 tests failed (the concurrent-burst tests)"
+      },
+      {
+        "finding_id": "EG-006",
+        "reverted": "queue abort signal no longer forwarded into _connect",
+        "observed": "2 of 5 tests failed"
+      },
+      {
+        "finding_id": "EG-007",
+        "reverted": "claimTerminalDisconnect calls removed from both handlers",
+        "observed": "4 of 6 tests failed (attempt counts doubled)"
+      },
+      {
+        "finding_id": "EG-009",
+        "reverted": "static shared component IDs with a user-only collector filter",
+        "observed": "3 of 3 tests failed (the click was accepted by both collectors and both bots were deleted)"
+      },
+      {
+        "finding_id": "EG-011",
+        "reverted": "hostname-only Origin comparison restored",
+        "observed": "3 of 4 new tests failed; the pre-existing cross-origin tests still passed"
+      },
+      {
+        "finding_id": "EG-012",
+        "reverted": "`COPY . .` restored and the new ignore patterns removed",
+        "observed": "4 of 6 tests failed"
+      },
+      {
+        "finding_id": "EG-013",
+        "reverted": "original Cloudflare guide restored",
+        "observed": "4 of 5 tests failed"
+      }
+    ],
+    "not_executed": [
+      "docker build / docker run -- Docker is not installed in this environment",
+      "any test against a real PostgreSQL server -- none available",
+      "any test against a live Discord gateway, Minecraft server or public deployment",
+      "npm run build:web -- the Vite build was not exercised; EG-012 addressed the dashboard only at the image-packaging boundary",
+      "Node 24 runtime -- the required engine version could not be installed"
+    ]
+  },
+  "dependency_changes": {
+    "performed": false,
+    "reason": "No finding was attributable to a vulnerable dependency version. EG-002 concerns token construction logic rather than a jsonwebtoken defect, so no manifest or lockfile change was warranted. `npm audit fix --force` was not run (forbidden by the task)."
+  },
+  "commits": [
+    {
+      "finding_id": "EG-001",
+      "short_sha": "d26ce00",
+      "sha": "d26ce0093db52a9bef650d8a4eb4f9d3252dbfdd",
+      "subject": "fix(EG-001): contain async event-boundary rejections instead of exiting",
+      "files": [
+        "src/discord/client.js",
+        "src/discord/events/interactionCreate.js",
+        "src/manager/instanceEvents.js",
+        "src/utils/asyncBoundary.js",
+        "tests/asyncEventBoundary.test.js"
+      ],
+      "lines_added": 552,
+      "lines_deleted": 53
+    },
+    {
+      "finding_id": "EG-002",
+      "short_sha": "ea16e4e",
+      "sha": "ea16e4ed9825ef6c511a14d7a8a6f819b377f256",
+      "subject": "fix(EG-002): give every token issuance unique entropy and a canonical TTL",
+      "files": [
+        "src/web/auth/tokenService.js",
+        "tests/tokenServiceLifecycle.test.js"
+      ],
+      "lines_added": 251,
+      "lines_deleted": 16
+    },
+    {
+      "finding_id": "EG-003",
+      "short_sha": "55f8815",
+      "sha": "55f8815e0eb7347271ae934459c8aed06fcfde6f",
+      "subject": "fix(EG-003): default-deny IPv6 special-use destinations in the egress policy",
+      "files": [
+        "README.md",
+        "src/utils/validators.js",
+        "tests/securityEgress.test.js"
+      ],
+      "lines_added": 233,
+      "lines_deleted": 17
+    },
+    {
+      "finding_id": "EG-004",
+      "short_sha": "dee4d5c",
+      "sha": "dee4d5ccfa58cb7e6fb24027cd93ec27f5e57f63",
+      "subject": "fix(EG-004): redact and bound untrusted log text, rotate files, bound SSE",
+      "files": [
+        ".env.example",
+        "README.md",
+        "src/config/index.js",
+        "src/services/logFile.js",
+        "src/services/logger.js",
+        "src/utils/security.js",
+        "src/web/routes/events.js",
+        "src/web/sse/sseWriter.js",
+        "tests/securityLogHygiene.test.js"
+      ],
+      "lines_added": 635,
+      "lines_deleted": 17
+    },
+    {
+      "finding_id": "EG-010",
+      "short_sha": "3cbaf8d",
+      "sha": "3cbaf8dc154aa6f0b7f95e5d822458600f79213d",
+      "subject": "fix(EG-010): classify loopback database hosts by IP literal, not text prefix",
+      "files": [
+        ".env.example",
+        "README.md",
+        "src/config/database.js",
+        "tests/databaseConfig.test.js"
+      ],
+      "lines_added": 130,
+      "lines_deleted": 7
+    },
+    {
+      "finding_id": "EG-005",
+      "short_sha": "334f347",
+      "sha": "334f347d6ba64b57bda49633a2d48edc5a3a1510",
+      "subject": "fix(EG-005): make bot quota reservation atomic under concurrent creates",
+      "files": [
+        "src/manager/BotManager.js",
+        "src/manager/Persistence.js",
+        "src/utils/asyncLock.js",
+        "tests/botQuotaRace.test.js"
+      ],
+      "lines_added": 394,
+      "lines_deleted": 8
+    },
+    {
+      "finding_id": "EG-006",
+      "short_sha": "a9ed641",
+      "sha": "a9ed641de93d52f0f6bec16be9dd0b381af99152",
+      "subject": "fix(EG-006): cancel an in-flight connect when its queued start times out",
+      "files": [
+        "src/bot/BotInstance.js",
+        "src/bot/connection/connector.js",
+        "tests/botConnectCancellation.test.js"
+      ],
+      "lines_added": 305,
+      "lines_deleted": 30
+    },
+    {
+      "finding_id": "EG-007",
+      "short_sha": "c5f0e74",
+      "sha": "c5f0e745313f0807e1fe91ae903b615f85809839",
+      "subject": "fix(EG-007): charge the reconnect budget once per physical disconnect",
+      "files": [
+        "src/bot/BotInstance.js",
+        "src/bot/connection/botEventBinder.js",
+        "tests/terminalEventDedup.test.js"
+      ],
+      "lines_added": 186,
+      "lines_deleted": 1
+    },
+    {
+      "finding_id": "EG-008",
+      "short_sha": "3eb5eae",
+      "sha": "3eb5eae7bf63303df9fa44beeafe3d947c4af552",
+      "subject": "fix(EG-008): make /list-bot, /status-bot and /stats responses ephemeral",
+      "files": [
+        "src/discord/commands/list-bot.js",
+        "src/discord/commands/stats.js",
+        "src/discord/commands/status-bot.js",
+        "tests/discordCommandPrivacy.test.js"
+      ],
+      "lines_added": 205,
+      "lines_deleted": 5
+    },
+    {
+      "finding_id": "EG-009",
+      "short_sha": "0710bdc",
+      "sha": "0710bdcee7123f05addbaa30f5358a46f20e1a6a",
+      "subject": "fix(EG-009): bind the delete confirmation to its prompt message and nonce",
+      "files": [
+        "src/discord/commands/delete-bot.js",
+        "tests/deleteConfirmationBinding.test.js"
+      ],
+      "lines_added": 286,
+      "lines_deleted": 9
+    },
+    {
+      "finding_id": "EG-011",
+      "short_sha": "cae108b",
+      "sha": "cae108bacb67c2c0515ea3414bdb48d52ecb6b11",
+      "subject": "fix(EG-011): compare the complete origin in the same-origin CSRF guard",
+      "files": [
+        ".env.example",
+        "docs/security-deployment.md",
+        "src/config/index.js",
+        "src/web/middleware/sameOriginGuard.js",
+        "tasks/check-web-security.js",
+        "tests/webSecurity.test.js"
+      ],
+      "lines_added": 223,
+      "lines_deleted": 14
+    },
+    {
+      "finding_id": "EG-012",
+      "short_sha": "5c402bc",
+      "sha": "5c402bcb63234027470cd2486e7a5cfff20be142",
+      "subject": "fix(EG-012): copy a runtime allowlist into the image instead of the context",
+      "files": [
+        ".dockerignore",
+        "Dockerfile",
+        "tests/dockerImageHygiene.test.js"
+      ],
+      "lines_added": 362,
+      "lines_deleted": 1
+    },
+    {
+      "finding_id": "EG-013",
+      "short_sha": "7e3212d",
+      "sha": "7e3212deee2420bb3ab434e10f3da60de7847476",
+      "subject": "docs(EG-013): make Full (strict) the only recommended public deployment path",
+      "files": [
+        "docs/cloudflare-reverse-proxy.md",
+        "tests/deploymentDocReview.test.js"
+      ],
+      "lines_added": 273,
+      "lines_deleted": 21
+    }
+  ],
+  "pull_request": {
+    "number": 9,
+    "url": "https://github.com/lenhalenhedev/EternalGhost-Afk-Bot-Minecraft/pull/9",
+    "requested_base": "main",
+    "base_branch": "main",
+    "source_branch": "arena/01a0811c-eternalghost-afk-bot-minecraft",
+    "title": "Security remediation for audit eternalghost-afk-bot-2026-09-07-post-4d6796f (13 findings)",
+    "status": "open",
+    "state": "OPEN",
+    "is_draft": false,
+    "mergeable": "MERGEABLE",
+    "merged_at": null,
+    "commits_in_pr": 14,
+    "merge_performed": false,
+    "notes": "The branch push and PR creation initially failed because GitHub authentication was unavailable in the remediation environment (gh auth status reported the GH_TOKEN was no longer valid and git push could not read credentials). Authentication was restored, the branch was pushed and the pull request was opened. It was deliberately left unmerged for human review. Note that `gh api user` returns 403 for this GitHub App installation token; that is expected and is not an authentication failure."
+  },
+  "untouched_files": [
+    {
+      "path": "report/security-audit-result.json",
+      "reason": "Audit input is read-only by task constraint; it was parsed but never modified."
+    },
+    {
+      "path": "docs/security-fix-report-eternalghost-afk-bot-2026-09-07.md",
+      "reason": "Prior remediation cycle artifact; kept intact for the audit trail."
+    },
+    {
+      "path": "docs/security-fix-results-eternalghost-afk-bot-2026-09-07.json",
+      "reason": "Prior remediation cycle artifact; kept intact for the audit trail."
+    },
+    {
+      "path": "package.json",
+      "reason": "No dependency remediation was warranted."
+    },
+    {
+      "path": "package-lock.json",
+      "reason": "No dependency remediation was warranted."
+    },
+    {
+      "path": "web/src/**",
+      "reason": "Out of scope; EG-012 addressed the dashboard only at the image-packaging boundary."
+    }
+  ],
+  "notes": "All 13 findings were independently re-validated against the audit commit; none was skipped and none was rejected as a false positive. Final statuses: fixed=11, verification_limited=2 (EG-005 real-PostgreSQL advisory-lock path, EG-012 Docker image build). No test or assertion was deleted, no test was skipped, no eslint-disable or @ts-ignore was added, no security control was weakened, and no secret, token or DATABASE_URL value appears in any commit, log or artifact. The pull request is #9 (https://github.com/lenhalenhedev/EternalGhost-Afk-Bot-Minecraft/pull/9), open against main and deliberately not merged. See docs/security-fix-report-eternalghost-afk-bot-2026-09-07-post-4d6796f.md for full evidence."
+}

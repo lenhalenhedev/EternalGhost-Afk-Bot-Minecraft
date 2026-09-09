@@ -1,15 +1,25 @@
 const express = require('express');
 const { authenticate } = require('../auth/authenticate');
 const { subscribe } = require('../sse/eventHub');
+const { SseWriter } = require('../sse/sseWriter');
 const { getBotLogs } = require('../../services/logger');
 const BotManager = require('../../manager/BotManager');
+const config = require('../../config');
 
 const activeStreams = new Map();
 
+/** Serialise one SSE frame. */
+function formatEvent(event) {
+  return `id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`;
+}
+
+/** Frames that may be dropped when a client stalls (EG-004). */
+function eventKind(name) {
+  return name === 'bot:log' ? 'log' : 'event';
+}
+
 function writeEvent(res, event) {
-  res.write(`id: ${event.id}\n`);
-  res.write(`event: ${event.event}\n`);
-  res.write(`data: ${JSON.stringify(event.data)}\n\n`);
+  res.write(formatEvent(event));
 }
 
 function createEventsRouter(botManager = BotManager) {
@@ -26,6 +36,14 @@ function createEventsRouter(botManager = BotManager) {
     });
     res.flushHeaders?.();
 
+    // EG-004: honour res.write() backpressure and bound what a slow client can
+    // make us buffer, so one flooding bot cannot grow memory per subscriber.
+    const writer = new SseWriter(res, {
+      maxBuffered: config.limits.sseMaxBufferedEvents,
+    });
+    const send = (event) =>
+      writer.write(formatEvent(event), eventKind(event.event));
+
     const visibleBotIds = new Set(
       botManager.listAuthorizedBots(req.principal).map((bot) => bot.id)
     );
@@ -33,13 +51,13 @@ function createEventsRouter(botManager = BotManager) {
     const sendInitial = () => {
       for (const instance of botManager.listAuthorizedBots(req.principal)) {
         visibleBotIds.add(instance.id);
-        writeEvent(res, {
+        send({
           id: `initial-${instance.id}`,
           event: 'bot:snapshot',
           data: { botId: instance.id, snapshot: instance.toJSON() },
         });
         for (const entry of getBotLogs(instance.id, 200)) {
-          writeEvent(res, {
+          send({
             id: `log-${instance.id}-${entry.ts}`,
             event: 'bot:log',
             data: {
@@ -51,7 +69,7 @@ function createEventsRouter(botManager = BotManager) {
           });
         }
       }
-      res.write(': connected\n\n');
+      writer.write(': connected\n\n', 'log');
     };
 
     sendInitial();
@@ -62,18 +80,21 @@ function createEventsRouter(botManager = BotManager) {
       });
       if (decision === 'ignore') return;
       if (decision === 'revoke') {
-        writeEvent(res, { ...event, data: { message: 'Session revoked.' } });
+        send({ ...event, data: { message: 'Session revoked.' } });
         cleanup();
         res.end();
         return;
       }
-      writeEvent(res, {
+      send({
         ...event,
         data: sanitizeEventData(event.data),
       });
     };
     const unsubscribe = subscribe(onEvent);
-    const keepalive = setInterval(() => res.write(': keepalive\n\n'), 20_000);
+    const keepalive = setInterval(
+      () => writer.write(': keepalive\n\n', 'log'),
+      20_000
+    );
     let expiryTimer;
     let closed = false;
 
@@ -83,6 +104,7 @@ function createEventsRouter(botManager = BotManager) {
       clearInterval(keepalive);
       clearTimeout(expiryTimer);
       unsubscribe();
+      writer.close();
       if (activeStreams.get(req.principal.userId)?.res === res)
         activeStreams.delete(req.principal.userId);
     };
@@ -98,7 +120,7 @@ function createEventsRouter(botManager = BotManager) {
         return;
       }
       if (closed) return;
-      writeEvent(res, {
+      send({
         event: 'auth:expired',
         data: { message: 'Session expired.' },
       });
@@ -168,6 +190,7 @@ function eventDecision(event, { userId, visibleBotIds }) {
 
 module.exports = {
   createEventsRouter,
+  formatEvent,
   writeEvent,
   sanitizeEventData,
   eventDecision,

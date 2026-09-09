@@ -41,11 +41,18 @@ function decryptPassword(record) {
 
 async function createMineflayerBot(
   record,
-  { resolveDestination = assertPublicDestination } = {}
+  { resolveDestination = assertPublicDestination, signal = null } = {}
 ) {
+  // EG-006: a queued start that already timed out must not open a socket.
+  if (signal?.aborted) {
+    throw new Error('Connection was cancelled before it started.');
+  }
   const destination = await resolveDestination(record.host, {
     allowPrivateIps: config.egress?.privateDestinationAllowlist || [],
   });
+  if (signal?.aborted) {
+    throw new Error('Connection was cancelled during destination resolution.');
+  }
   return mineflayer.createBot({
     host: destination.address,
     port: record.port,

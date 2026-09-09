@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('node:crypto');
 const {
   SlashCommandBuilder,
   ActionRowBuilder,
@@ -12,6 +13,13 @@ const BotManager = require('../../manager/BotManager');
 const { successEmbed, errorEmbed } = require('../embeds');
 const { logger } = require('../../services/logger');
 const { safeErrorMessage } = require('../safeError');
+
+const CONFIRM_TIMEOUT_MS = 30_000;
+
+/** Fresh per-dialog secret so two open prompts can never satisfy each other. */
+function newDialogNonce() {
+  return crypto.randomBytes(9).toString('hex');
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -39,33 +47,45 @@ module.exports = {
       });
     }
 
-    // Show confirm buttons
+    // EG-009: every dialog used the same two component IDs and the collector
+    // filtered only on the clicking user, so one Confirm click could satisfy
+    // every other open dialog for the same administrator and delete a target
+    // the click never pointed at. Each dialog now carries a random nonce plus
+    // the resolved bot ID in its component IDs, and the collector additionally
+    // requires the interaction to belong to this exact prompt message.
+    const nonce = newDialogNonce();
+    const confirmId = `confirm_delete:${nonce}:${match.id}`;
+    const cancelId = `cancel_delete:${nonce}:${match.id}`;
+
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('confirm_delete')
+        .setCustomId(confirmId)
         .setLabel('✅ Xác nhận xóa')
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
-        .setCustomId('cancel_delete')
+        .setCustomId(cancelId)
         .setLabel('❌ Hủy')
         .setStyle(ButtonStyle.Secondary)
     );
 
     const r = match.record;
-    await interaction.editReply({
+    const prompt = await interaction.editReply({
       content: `⚠️ Bạn có chắc muốn **xóa** bot \`${r.username}\`@\`${r.host}:${r.port}\` (\`${match.id}\`)?`,
       components: [row],
     });
+    const promptId =
+      prompt?.id ?? (await interaction.fetchReply?.())?.id ?? null;
 
-    // Wait for button click (30s timeout)
+    // Wait for a button click on *this* prompt only (30s timeout).
     let btn;
     try {
       btn = await interaction.channel.awaitMessageComponent({
         filter: (i) =>
-          i.user.id === interaction.user.id &&
-          ['confirm_delete', 'cancel_delete'].includes(i.customId),
+          i.user?.id === interaction.user.id &&
+          (i.customId === confirmId || i.customId === cancelId) &&
+          (!promptId || i.message?.id === promptId),
         componentType: ComponentType.Button,
-        time: 30_000,
+        time: CONFIRM_TIMEOUT_MS,
       });
     } catch {
       return interaction.editReply({
@@ -76,7 +96,7 @@ module.exports = {
 
     await btn.deferUpdate();
 
-    if (btn.customId === 'cancel_delete') {
+    if (btn.customId !== confirmId) {
       return interaction.editReply({
         content: '❌ Đã hủy thao tác xóa.',
         components: [],

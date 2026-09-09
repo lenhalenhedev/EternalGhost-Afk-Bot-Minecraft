@@ -328,7 +328,7 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 | `DB_POOL_IDLE_TIMEOUT_MS`       |    No    | Idle connection eviction timeout.                                    |
 | `DB_POOL_CONNECTION_TIMEOUT_MS` |    No    | Connection acquisition timeout.                                      |
 
-> **Transport policy.** All non-loopback PostgreSQL instances require a CA-backed TLS connection with `rejectUnauthorized: true`. Only `localhost`, `127.0.0.0/8`, and `::1` may use plaintext for local development. `DATABASE_URL` TLS query parameters are rejected to prevent accidental downgrade.
+> **Transport policy.** All non-loopback PostgreSQL instances require a CA-backed TLS connection with `rejectUnauthorized: true`. Only parsed IP literals in `127.0.0.0/8`, `::1`, and the hostname `localhost` may use plaintext for local development — a remote DNS name that merely *starts* with `127.` is treated as remote and still requires verified TLS. Set `DB_ALLOW_LOOPBACK_PLAINTEXT=false` to force verified TLS on every connection, including loopback. `DATABASE_URL` TLS query parameters are rejected to prevent accidental downgrade.
 
 > *At least one of `DATABASE_URL` or the discrete `PG*` set must be provided.
 
@@ -338,6 +338,10 @@ All variables are declared in `.env.example`. The loader in `src/config/index.js
 | -------------------------- | -------- | ------------------------------------------------------- |
 | `LOG_DIR`                  | `./logs` | Directory for rotating log files.                       |
 | `LOG_LEVEL`                | `info`   | Winston log level.                                      |
+| `LOG_MAX_FILE_BYTES`       | `10485760` | Rotate each JSONL file at this size (min 4096).       |
+| `LOG_MAX_FILES`            | `5`      | Rotated generations retained per JSONL file (1–100).    |
+| `LOG_MESSAGE_MAX_CHARS`    | `2000`   | Longest retained length of one log message.             |
+| `SSE_MAX_BUFFERED_EVENTS`  | `200`    | SSE frames buffered per slow client before log frames are dropped. |
 | `MAX_BOTS`                 | `50`     | Maximum concurrent bot instances.                       |
 | `BOT_QUEUE_SIZE`           | `100`    | Per-bot task-queue depth.                               |
 | `BOT_QUEUE_TIMEOUT`        | `10000`  | Per-task timeout in milliseconds.                       |
@@ -369,7 +373,7 @@ All commands are ephemeral, administrator-gated, principal-scoped, and respond w
 
 > **Chat safety.** The `/chat` command enforces a 200-character limit, a per-user cooldown, control-character rejection, and an in-game command whitelist (`/register`, `/login`, `/spawn`, `/home`, `/back`). Non-whitelisted slash commands are refused.
 
-> **Egress safety.** Each Minecraft destination is syntax-validated at creation and resolved again immediately before connecting. The connector denies loopback, private, link-local, metadata, multicast, unspecified, reserved, and mixed DNS results by default, then pins the connection to one verified address to prevent DNS rebinding. A private server can be approved only by listing its exact IP in `MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST`.
+> **Egress safety.** Each Minecraft destination is syntax-validated at creation and resolved again immediately before connecting. The connector denies loopback, private, link-local, metadata, multicast, unspecified, reserved, and mixed DNS results by default, then pins the connection to one verified address to prevent DNS rebinding. IPv6 is default-deny: only the global unicast range `2000::/3` is eligible, and every special-use block — deprecated site-local (`fec0::/10`), IPv4-compatible (`::/96`), NAT64/SIIT translated (`64:ff9b::/96`, `64:ff9b:1::/48`), Teredo, 6to4, documentation, benchmarking, ORCHID, 6bone, ULA, link-local and multicast — is rejected by prefix. A private server can be approved only by listing its exact IP in `MINECRAFT_PRIVATE_DESTINATION_ALLOWLIST`.
 
 ---
 
@@ -437,7 +441,7 @@ npm run format
 - **Graceful shutdown.** `BotManager.shutdown()` stops the cron summary task, stops every bot, and flushes persistence, ensuring no orphaned timers or in-flight writes on process exit.
 - **Auto-restart.** Bots flagged as running are automatically restarted on boot, restoring the fleet to its last known operational state.
 - **Offline-mode servers.** Bots connect in `offline` authentication mode; AuthMe login is handled in-world via the authentication flow when a prompt is detected.
-- **Observability.** Rotating file logs, an in-memory ring buffer per bot, alert cooldowns, and periodic Discord summaries provide layered visibility without unbounded memory growth.
+- **Observability.** Rotating file logs, an in-memory ring buffer per bot, alert cooldowns, and periodic Discord summaries provide layered visibility without unbounded memory growth. Every log message is ANSI-stripped, secret-redacted with `redactForLog` and truncated to `LOG_MESSAGE_MAX_CHARS` before it reaches stdout, the JSONL sinks, the ring buffer, or an SSE stream, so a hostile Minecraft server cannot smuggle a credential echo or an unbounded payload into durable logs. Each JSONL file rotates at `LOG_MAX_FILE_BYTES` and retains `LOG_MAX_FILES` generations, and every SSE connection buffers at most `SSE_MAX_BUFFERED_EVENTS` frames — dropping the oldest log frames first — so a stalled dashboard client cannot make the process grow without bound.
 
 ---
 
